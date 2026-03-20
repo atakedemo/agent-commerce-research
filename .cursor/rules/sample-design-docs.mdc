@@ -46,6 +46,13 @@ alwaysApply: false
 - Mermaid `sequenceDiagram` を使う
 - 対象実装にとって重要なユースケースを **最低2本** 描く
 - HTTP/API、ジョブ、イベント、支払い、永続化など、対象の中核フローを優先する
+- 各 Mermaid ブロックで `autonumber` を有効にする
+- Participants は `box` を使って、少なくとも以下のカテゴリでグルーピングする
+  - ユーザー
+  - フロントエンド
+  - バックエンド
+- `sequence.md` には **システムレベルの具体シーケンス図** に加えて、**抽象化した粒度のシーケンス図** も別セクションで記載する
+- 抽象化した粒度の図では、実装固有のクラス名やファイル名よりも、UI / API / Domain / External Service のような役割ベースの登場人物を優先してよい
 
 ## ER図（`er.md`）の方針
 - Mermaid `erDiagram` を使う

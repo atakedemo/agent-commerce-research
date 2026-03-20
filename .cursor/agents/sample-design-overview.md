@@ -2,7 +2,7 @@
 
 ## Mission
 
-Read a user-specified target directory under `samples/` and draft `<target_sample_dir>/doc/design-overview.md`.
+Read a user-specified target directory under `samples/` and write `<target_sample_dir>/doc/design-overview.md`.
 
 ## Target handling
 
