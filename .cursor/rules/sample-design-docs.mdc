@@ -1,0 +1,53 @@
+---
+description: Generate design overview, sequence diagram, and ER diagram for a user-specified sample under samples/
+globs: samples/**
+alwaysApply: false
+---
+
+# samples配下の設計書作成ルール
+
+## 目的
+- ユーザーが `@samples/...` 配下のディレクトリを指定したら、その対象ディレクトリのソースコードから以下3点の設計書（Markdown）を作成・更新する。
+  - **設計概要**: `<target_sample_dir>/doc/design-overview.md`
+  - **シーケンス図**（mermaid）: `<target_sample_dir>/doc/sequence.md`
+  - **ER図**（mermaid）: `<target_sample_dir>/doc/er.md`
+
+## 対象ディレクトリの決め方
+- ユーザーが `@samples/...` で **1つのディレクトリ** を指定したら、それを対象にする。
+- ユーザーが対象配下の **個別ファイル** を指定したら、そのファイルを含むサンプルディレクトリを対象に正規化する。
+- `@samples/...` が **複数** ある場合は、どれを対象にするか確認する。
+- `samples/` 配下の対象が **明示されていない** 場合は、作業前に確認する。
+
+## スコープ（読むべき/読まないべき）
+- **読むべき**
+  - `<target_sample_dir>/README*`
+  - `<target_sample_dir>` 配下の主要実装ファイル（`src/`, `app/`, `server/`, `client/`, `components/`, `routes/` など）
+  - `<target_sample_dir>` 配下の設定/定義ファイル（`package.json`, `pyproject.toml`, `vite.config.*`, `*.json` など）
+  - 設計書作成に必要なデータ定義や固定データ
+- **読まない（原則）**
+  - `node_modules/**`
+  - `.venv/**`, `venv/**`, `dist/**`, `build/**`, `.vite/**`, `__pycache__/**`
+  - 明らかな生成物やキャッシュ
+
+## 出力の基本方針
+- **事実ベース**: “コードに書かれていること”を一次情報として説明する。推測が必要なら **Assumptions** や **補足** として分ける。
+- **対象依存**: コンポーネント名や図の登場人物は、対象ディレクトリの実装に合わせて決める。特定のサンプル構成を前提にしない。
+- **出力先**: 常に `<target_sample_dir>/doc/` 配下へ出力し、無ければ作成する。
+
+## 設計概要（`design-overview.md`）に含めるもの
+- サンプルの目的
+- 全体構成
+- 主要コンポーネントと責務
+- 主要データ
+- リクエスト/状態の流れ
+- 制約、モック、インメモリ実装、外部依存
+
+## シーケンス図（`sequence.md`）の方針
+- Mermaid `sequenceDiagram` を使う
+- 対象実装にとって重要なユースケースを **最低2本** 描く
+- HTTP/API、ジョブ、イベント、支払い、永続化など、対象の中核フローを優先する
+
+## ER図（`er.md`）の方針
+- Mermaid `erDiagram` を使う
+- 実DBが無くても、コード上のドメインエンティティ関係として整理してよい
+- エンティティ名と属性は対象実装に合わせる
