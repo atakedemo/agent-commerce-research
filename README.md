@@ -8,13 +8,13 @@
 ## サンプル実装01 : A2A
 
 * 引用元：[samples/a2a/](https://github.com/Universal-Commerce-Protocol/samples/tree/main/a2a)
-* 作業環境:[./sample-a2a/](./sample-a2a/)
+* 作業環境:[./01-sample-a2a/](./01-sample-a2a/)
 
 ### デモ手順
 
 #### 1. AIエージェントバックエンドの立ち上げ
 
-[./sample-a2a/business_agent](./sample-a2a/business_agent)にて実施
+[./01-sample-a2a/business_agent](./01-sample-a2a/business_agent)にて実施
 
 **1-1. Python環境を立ち上げる**
 
@@ -69,7 +69,7 @@ INFO:     Uvicorn running on http://localhost:10999 (Press CTRL+C to quit)
 
 #### 2. サンプルのWebアプリの立ち上げ
 
-[./sample-a2a/chat-agent/](./sample-a2a/chat-agent/)で実施
+[./01-sample-a2a/chat-agent/](./01-sample-a2a/chat-agent/)で実施
 
 **2-1. Node.js環境の立ち上げ**
 
@@ -122,7 +122,7 @@ pyproject.tomlの参照パスを修正
 ucp-sdk = { path = "../../sdk/python/", editable = true }
 ```
 
-依存関係をインストール ※[/sample-restapi/server/](./sample-restapi/server/)配下で実施
+依存関係をインストール ※[/02-sample-restapi/server/](./02-sample-restapi/server/)配下で実施
 
 ```bash
 uv sync
@@ -149,7 +149,7 @@ uv run server.py \
 SERVER_PID=$!
 ```
 
-テスト用のクライアントを起動 ※ここからは[/sample-restapi/client/flower_shop/](./sample-restapi/client/flower_shop/)で実施
+テスト用のクライアントを起動 ※ここからは[/02-sample-restapi/client/flower_shop/](./02-sample-restapi/client/flower_shop/)で実施
 
 ```bash
 cd samples/rest/python/client/flower_shop/
@@ -157,7 +157,7 @@ uv sync
 uv run simple_happy_path_client.py --server_url=http://localhost:8182
 ```
 
-※決済オプションが足りないので修正（[/sample-restapi/server/routes/discovery_profile.json](./sample-restapi/server/routes/discovery_profile.json)）
+※決済オプションが足りないので修正（[/02-sample-restapi/server/routes/discovery_profile.json](./02-sample-restapi/server/routes/discovery_profile.json)）
 
 ```json
 {
@@ -184,5 +184,5 @@ uv run simple_happy_path_client.py --server_url=http://localhost:8182
 ```
 
 * 引用元：[samples/a2a/](https://github.com/Universal-Commerce-Protocol/samples/tree/main/a2a)
-* 作業環境:[./sample-restapi](./sample-restapi/)
+* 作業環境:[./02-sample-restapi](./02-sample-restapi/)
 
