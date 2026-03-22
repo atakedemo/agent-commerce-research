@@ -62,8 +62,18 @@ Treat `<target_insight_dir>/README.md` as the control file for reference lookup.
    - `Must`: references that must be consulted
    - `Should`: references that should be consulted when building context or support
    - `May`: optional references to consult only when the available evidence still looks insufficient
-4. If `README.md` points to reference repositories or documents, follow that guidance before expanding to other sources
-5. If you use a source that is not listed in `README.md`, explain why it was necessary
+4. If `Target` is a GitHub repository, inspect not only the repository contents but also relevant Issues and PRs
+5. For Target-repo Issues and PRs, prioritize items that overlap with the current investigation:
+   - keyword overlap with the user-specified Issue
+   - similar titles or problem statements
+   - labels that indicate active design, bug, spec, roadmap, or discussion work
+   - recently updated open items
+6. Use Target-repo Issue/PR evidence to strengthen:
+   - likely unresolved items
+   - themes currently being prioritized
+   - already proposed solutions, blockers, or pending decisions
+7. If `README.md` points to reference repositories or documents, follow that guidance before expanding to other sources
+8. If you use a source that is not listed in `README.md`, explain why it was necessary
 
 ## How to record reference citations
 
@@ -73,6 +83,7 @@ If you cite any reference repository or reference document during the investigat
 
 For each citation, append one flat record that includes at least:
 
+- citation source
 - Issue URL
 - citation purpose within 100 Japanese characters
 
@@ -87,6 +98,7 @@ Use the output contract in [assets/output-example.md](assets/output-example.md).
 - Distinguish clearly between:
   - facts observed in the Issue
   - facts observed in the directory
+  - facts observed in the Target repository's Issue/PR discussions
   - interpretation or implications
 - When evidence is weak or missing, say so explicitly
 - Prefer concise Japanese prose over long bullet dumps
@@ -142,13 +154,29 @@ Summarize only what is stated in the Issue description:
 
 Organize findings as flat bullets. Each bullet should connect evidence to an observation.
 
+If Target-repo Issues or PRs were consulted, include fact bullets such as:
+
+- which topics appear repeatedly in open Issues/PRs
+- which items look unresolved
+- which direction or proposal is being discussed most actively
+
 ### `## 分析`
 
 Explain what the observed facts imply for the Issue. This is where synthesis belongs.
 
+If the Issue body itself has multiple distinct themes or paragraphs, split this section with `###` headings that mirror those themes.
+
+When Target-repo Issue/PR evidence exists, explain:
+
+- what it suggests about likely unresolved areas
+- what it suggests about current prioritization
+- whether the repo discussion supports or weakens a given conclusion
+
 ### `## 未解決事項・不足情報`
 
 List missing evidence, ambiguities, or data gaps that block a stronger conclusion.
+
+If Target-repo open Issues or unmerged PRs indicate pending decisions, include them here as unresolved candidates with a short evidence note.
 
 ### `## 次のアクション`
 
@@ -167,5 +195,6 @@ Before finishing, verify:
 - all required sections exist
 - the Issue summary is based on the real Issue body
 - the analysis references evidence from the target directory
+- if the Target is a GitHub repository, relevant Issue/PR evidence was considered or its absence was noted
 - missing information is called out explicitly
 - any cited reference repositories are logged in `references/reference-report.md`
