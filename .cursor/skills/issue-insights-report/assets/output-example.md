@@ -1,0 +1,54 @@
+# 調査レポート
+
+## 対象Issue
+
+- Issue: `owner/repo#123`
+- タイトル: `Issue title`
+- 概要: Issue description の要点を 2-3 文で整理する
+
+## 調査対象ディレクトリ
+
+- 対象: `insights/example-topic`
+- 確認対象: `README.md`, `notes.md`, `summary.json`
+
+## エグゼクティブサマリー
+
+Issue で求められている論点に対して、`insights/example-topic` 配下の情報から何が言えるかを短くまとめる。
+
+## Issue要約
+
+Issue の description に書かれている内容だけを要約する。要件、期待結果、制約、未確定事項を混ぜずに整理する。
+
+## 主要ファクト
+
+- `README.md` では調査対象の背景と前提条件が定義されている。
+- `notes.md` には観測結果が時系列で残っている。
+- `summary.json` には比較結果や件数が構造化されている。
+
+## 分析
+
+Issue の論点と `insights/example-topic` 配下の根拠を対応づけて、何が既に確認できていて、何がまだ断定できないかを説明する。
+
+## 未解決事項・不足情報
+
+- Issue description には成功条件の優先順位が明示されていない。
+- `insights/example-topic` 配下に最新実行日の情報がなく、データ鮮度を断定できない。
+
+## 次のアクション
+
+- Issue の成功条件を追加で確認する。
+- 不足している観測ログを `insights/example-topic` に追加する。
+- 主要ファクトを更新したうえで `Report.md` を再生成する。
+
+## 参照ファイル
+
+- `insights/example-topic/README.md`
+- `insights/example-topic/notes.md`
+- `insights/example-topic/summary.json`
+
+## 外部リファレンス記録
+
+外部リファレンスを引用した場合は、`references/reference-report.md` に以下を記録する。
+
+- Issue URL
+- 引用の目的（100文字以内）
