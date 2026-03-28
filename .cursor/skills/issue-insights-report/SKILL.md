@@ -84,10 +84,11 @@ If you cite any reference repository or reference document during the investigat
 For each citation, append one flat record that includes at least:
 
 - citation source
-- Issue URL
+- target Issue written as `[Issue title](url)`
 - citation purpose within 100 Japanese characters
 
 Use a simple Markdown table or bullet format, but keep the fields explicit.
+Citation organization may stay at repository level. You do not need separate grouping for each cited Issue or PR.
 
 Use the lookup reminders in [references/reference.md](references/reference.md).
 Use the output contract in [assets/output-example.md](assets/output-example.md).
@@ -105,6 +106,7 @@ Use the output contract in [assets/output-example.md](assets/output-example.md).
 - Name concrete files in `## 参照ファイル`
 - If `Report.md` already exists, replace it with an updated version rather than appending fragments
 - If external references were cited, also update `references/reference-report.md`
+- In `references/reference-report.md`, use the column title `対象Issue` instead of `Issue URL`
 
 ## Required structure
 
@@ -198,3 +200,4 @@ Before finishing, verify:
 - if the Target is a GitHub repository, relevant Issue/PR evidence was considered or its absence was noted
 - missing information is called out explicitly
 - any cited reference repositories are logged in `references/reference-report.md`
+- `references/reference-report.md` uses repository-level `引用元` and Markdown-linked `対象Issue`

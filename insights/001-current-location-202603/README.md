@@ -10,6 +10,7 @@
 
 * [AP2](/references/specification/community/AP2/)
 * [A2A](/references/specification/community/A2A/)
+* [MCP](/references/specification/community/modelcontextprotocol/)
 
 ### Should
 

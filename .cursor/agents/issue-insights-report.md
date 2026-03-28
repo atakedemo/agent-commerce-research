@@ -36,9 +36,10 @@ If either input is missing or ambiguous, stop and ask the parent agent to clarif
   - proposed approaches, blockers, or deferred decisions
 - If a reference repository or document is cited in the analysis, record the citation in `references/reference-report.md`
 - For each citation record, include:
-  - the citation source
-  - the Issue URL
+  - the citation source at repository or document-set level
+  - the target Issue as Markdown link text `[Issue title](url)`
   - the citation purpose in 100 characters or fewer
+- Citation organization may stay at repository level; separate categorization by individual Issue or PR source is not required
 
 ## Output requirements
 
