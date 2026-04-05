@@ -35,7 +35,13 @@ Issue 本文では次が求められている。
 
 ### 対象ディレクトリの構造が何を示しているか
 
-公式リポジトリのルート `README.md` に、責務分離に沿ったディレクトリ案内がまとまっている。人間可読の提案は `rfcs/`、機械可読な版は `spec/<YYYY-MM-DD>/`（`openapi/` と `json-schema/`）、同版に揃えた例が `examples/<日付>/`、版ごとの変更説明が `changelog/`、運用と SEP が `docs/`、という **「版スナップショット + 並行ドラフト（unreleased）」** 構造である。これは、HTTP IF・JSON データモデル・説明 RFC・ガバナンスを同じリポジトリで型付きに同期させるための典型的な配置だと解釈できる。
+* 公式リポジトリのルート `README.md` に、責務分離に沿ったディレクトリ案内がまとまっている（**「版スナップショット + 並行ドラフト（unreleased）」** 構造である。）
+  * 人間可読の提案は `rfcs/`
+  * 機械可読な版は `spec/<YYYY-MM-DD>/`（`openapi/` と `json-schema/`）
+  * 同版に揃えた例が `examples/<日付>/`
+  * 版ごとの変更説明が `changelog/`
+  * 運用と SEP が `docs/`
+* HTTP IF・JSON データモデル・説明 RFC・ガバナンスを同じリポジトリで型付きに同期させるための典型的な配置だと解釈できる。
 
 第2階層までの俯瞰（ルート `README.md` の構造抜粋に準拠）:
 
@@ -58,7 +64,7 @@ Issue 本文では次が求められている。
 
 **IF 定義（HTTP）** は `spec/2026-01-30/openapi/` に集約される。
 
-| 表面 | 主な操作 | 役割 |
+| IF | 主な操作 | 役割 |
 |------|-----------|------|
 | `openapi.agentic_checkout.yaml` | `POST /checkout_sessions`（作成）、`POST|GET /checkout_sessions/{id}`（更新・取得）、`POST .../complete`（完了）、`POST .../cancel`（取消） | エージェント起点のチェックアウト・セッションライフサイクル |
 | `openapi.delegate_payment.yaml` | `POST /agentic_commerce/delegate_payment` | 許容額（Allowance）付きで PSP が資格情報をトークン化し、マーチャントが制限利用できるようにする |
@@ -82,12 +88,24 @@ Issue 本文では次が求められている。
 
 ### 状態管理・セッション管理
 
-`CheckoutSession` / `CheckoutSessionBase` の `status` は、少なくとも次の列挙でライフサイクルが表現される: `incomplete`, `not_ready_for_payment`, `requires_escalation`, `authentication_required`, `ready_for_payment`, `pending_approval`, `complete_in_progress`, `completed`, `canceled`, `in_progress`, `expired`。作成・更新・完了・取消の各エンドポイントと、表示用 `messages[]`、介入用 `capabilities`、期限 `expires_at` が組み合わさり、**サーバ権威のセッション状態機械**として設計されている。
+* `CheckoutSession` / `CheckoutSessionBase` の `status` は、少なくとも次の列挙でライフサイクルが表現される
+  * `incomplete`
+  * `not_ready_for_payment`
+  * `requires_escalation`
+  * `authentication_required`
+  * `ready_for_payment`
+  * `pending_approval`
+  * `complete_in_progress`
+  * `completed`
+  * `canceled`
+  * `in_progress`
+  * `expired`
+* 作成・更新・完了・取消の各エンドポイントと、表示用 `messages[]`、介入用 `capabilities`、期限 `expires_at` が組み合わさり、**サーバ権威のセッション状態機械**として設計されている。
 
 OpenAPI は遷移表を 1 枚の表で固定していないため、下図は **列挙値とエンドポイントの意味から整理した概念上の状態遷移**である。実装ごとに到達し得る辺が異なり、失敗経路や `expired` の扱いもセラー実装に依存する。
 
 ```mermaid
-stateDiagram-v2
+stateDiagram
     [*] --> incomplete: POST /checkout_sessions
 
     incomplete --> in_progress: POST …/checkout_sessions/{id}（更新）
@@ -154,7 +172,7 @@ GitHub API 上、当該リポジトリには **GitHub Releases（タグ）が存
 - **機械可読定義**: `spec/unreleased/openrpc/openrpc.agentic_checkout.json` が **5 つの MCP ツール**（create / get / update / complete / cancel）を OpenRPC で定義する。一方、**日付版スナップショット `spec/2026-01-30/` には OpenRPC が含まれていない**（ミラー上は OpenAPI と JSON Schema のみ）。即ち **MCP Bindingは現行の「リリース済み日付フォルダ」より開発ライン（unreleased）側に存在** する。
 - **ディスカバリとの接続**: [`rfcs/rfc.discovery.md`](https://github.com/agentic-commerce-protocol/agentic-commerce-protocol/blob/main/rfcs/rfc.discovery.md) および JSON Schema 上の `transports` は `rest` と `mcp` を列挙し得る旨が述べられ、[SEP #135](https://github.com/agentic-commerce-protocol/agentic-commerce-protocol/issues/135)（MCP Transport Binding）と相互参照される。
 - **チェンジログ**: `changelog/unreleased/mcp-transport-binding.md` で OpenRPC・`docs/mcp-binding.md`・MCP 用例 JSON の追加が **Added** として記録されている。
-- **未カバー（仕様上の明示）**: `docs/mcp-binding.md` は **Delegate Payment の MCP Bindingはフォローアップ SEP** に委ねるとし、現行Bindingは **Agentic Checkout 表面のみ** としている。
+- **未カバー（仕様上の明示）**: `docs/mcp-binding.md` は **Delegate Payment の MCP Bindingはフォローアップ SEP** に委ねるとし、現行Bindingは **Agentic Checkout IFのみ** としている。
 
 #### 2. `rfcs/` 配下の各 Markdown で定めている内容
 
@@ -184,7 +202,7 @@ GitHub API 上、当該リポジトリには **GitHub Releases（タグ）が存
 - **エージェント→マーチャントの REST リクエスト**: **`Signature` は `base64url` で RECOMMENDED**。**canonical JSON** 上に署名し、**`Timestamp`（RFC 3339）と組み合わせて鮮度を bounded skew で SHOULD 検証**。**許容アルゴリズムは帯域外で公開する**想定。
 - **Webhook（マーチャント→プラットフォーム）**: RFC では **別物**として明示され、**`Merchant-Signature` の HMAC 検証**を参照（OpenAPI `openapi.agentic_checkout_webhook.yaml` 側で Stripe 型 `t=...,v1=...` と raw body の HMAC-SHA256 等が定義される流れと整合）。**この経路では `Signature` ヘッダは使われない**。
 
-**他 API の `Signature`（同一ヘッダ名・意味は表面ごとに異なる）**:
+**他 API の `Signature`（同一ヘッダ名・意味はIFごとに異なる）**:
 
 - **`rfc.delegate_payment.md`**: クライアントは **detached 署名を MUST**・`base64url`。
 - **`rfc.delegate_authentication.md`**: **`Signature` REQUIRED**、canonical JSON＋`Timestamp` の **MUST 検証**。
@@ -205,7 +223,7 @@ RFC は **アルゴリズム（Ed25519 / ES256 等）を帯域外で公開する
 
 **MCP Binding（`docs/mcp-binding.md`）**: HTTP の `Signature` は **`meta.signature` に対応**（Required: **No**、注記は **Request signing**）。**`Authorization` は `meta` に載せず** MCP 接続レベルで扱う。
 
-**調査上の注意**: 実装では **「どの相手が・どの本文に・どのアルゴリズムで `Signature` を付けるか」は表面（Checkout / Delegate Payment / Delegate Authentication）で要件が異なる**。チェックアウト OpenAPI の「webhook」記述だけを **購読者向け REST の署名仕様**と読み替えない方がよい。**GET の署名対象**および **MCP の `meta.signature` の正確なオクテット列**は、**プロファイルまたは今後の明文化**に期待が残る。
+**調査上の注意**: 実装では **「どの相手が・どの本文に・どのアルゴリズムで `Signature` を付けるか」はIF（Checkout / Delegate Payment / Delegate Authentication）で要件が異なる**。チェックアウト OpenAPI の「webhook」記述だけを **購読者向け REST の署名仕様**と読み替えない方がよい。**GET の署名対象**および **MCP の `meta.signature` の正確なオクテット列**は、**プロファイルまたは今後の明文化**に期待が残る。
 
 ## 未解決事項・不足情報
 
