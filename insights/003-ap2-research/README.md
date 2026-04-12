@@ -28,3 +28,4 @@
 
 * サンプルシナリオ: `samples/python/scenarios/`, `samples/go/scenarios/`
 * 変更履歴: `CHANGELOG.md`
+* Target リポジトリの **open Issue** スナップショット: 本ディレクトリの [`open-issues-filtered.md`](./open-issues-filtered.md)（[Issue #4 コメント](https://github.com/atakedemo/agent-commerce-research/issues/4#issuecomment-4230878507) 由来）
