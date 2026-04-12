@@ -11,6 +11,7 @@
 ### Must
 
 * ワークスペース内ミラー: `references/specification/community/AP2/`（Issue で指定されたデータソースと同一リポジトリのスナップショット）
+* **Python サンプル**: [リポジトリの `samples/python`](https://github.com/google-agentic-commerce/AP2/tree/main/samples/python)（ワークスペースでは `references/specification/community/AP2/samples/python/`）— [Issue #4 コメント](https://github.com/atakedemo/agent-commerce-research/issues/4#issuecomment-4230817462) で **Must** 指定
 * 中核仕様: `docs/specification.md`
 * A2A との IF: `docs/a2a-extension.md`
 * ロードマップ: `docs/roadmap.md`
