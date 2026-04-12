@@ -62,13 +62,42 @@ Issue 本文では次が求められている。
 
 ### データモデルおよび IF 定義
 
-**IF 定義（HTTP）** は `spec/2026-01-30/openapi/` に集約される。
+**IF 定義** は **(1)** 機械可読な **`spec/<日付>/openapi/*.yaml`** と **(2)** 人間可読な **`rfcs/*.md`** の両方に記述がある。前者は OpenAPI 3.x が正、後者は **エンドポイント・メソッド・リクエストボディの説明**および **RFC メタの Status（Draft / Proposal 等）** を整理するために参照する。
 
-| IF | 主な操作 | 役割 |
-|------|-----------|------|
-| `openapi.agentic_checkout.yaml` | `POST /checkout_sessions`（作成）、`POST|GET /checkout_sessions/{id}`（更新・取得）、`POST .../complete`（完了）、`POST .../cancel`（取消） | エージェント起点のチェックアウト・セッションライフサイクル |
-| `openapi.delegate_payment.yaml` | `POST /agentic_commerce/delegate_payment` | 許容額（Allowance）付きで PSP が資格情報をトークン化し、マーチャントが制限利用できるようにする |
-| `openapi.agentic_checkout_webhook.yaml` | （別ファイル） | マーチャント側の Webhook 契約（イベント通知側の IF） |
+#### 機械可読 IF（OpenAPI、`spec/2026-01-30/openapi/`）
+
+| ステータス | IF（ファイル） | 主な操作 | 役割 |
+|--------|----------------|----------|------|
+| **日付版スナップショットに収録**（`2026-01-30`） | `openapi.agentic_checkout.yaml` | `POST /checkout_sessions`、`POST|GET /checkout_sessions/{id}`、`POST .../complete`、`POST .../cancel` | エージェント起点のチェックアウト・セッションライフサイクル |
+| 同上 | `openapi.delegate_payment.yaml` | `POST /agentic_commerce/delegate_payment` | Allowance 付きで資格情報をトークン化しマーチャントが制限利用 |
+| 同上 | `openapi.agentic_checkout_webhook.yaml` | `POST`（受信側パスはファイル内 `paths` 参照） | マーチャント→プラットフォームの注文イベント通知（`Merchant-Signature` 等） |
+
+#### `rfcs/` に記載された IF（エンドポイント・Method・リクエストボディ）
+
+各 RFC 先頭の **Status** と、本文で **パス・メソッド・ボディ**が明示されている箇所に基づく。**同一チェックアウト系は `rfc.agentic_checkout.md` を主とし、拡張 RFC は「既存エンドポイント上の追加フィールド」**として整理する。
+
+| ステータス（RFC） | RFC ファイル | エンドポイント | Method | リクエストボディ（RFC 記載の要点） |
+|---------------------|----------------|----------------|--------|-----------------------------------|
+| Draft | `rfc.agentic_checkout.md` | `/checkout_sessions` | `POST` | `items`、`buyer`、`fulfillment_details` 等（§4.1 サブセット例）。`Idempotency-Key` は全 POST で REQUIRED。 |
+| Draft | 同上 | `/checkout_sessions/{checkout_session_id}` | `POST` | `items`、`fulfillment_details`、`selected_fulfillment_options` 等（§4.2、本文は差分更新可）。 |
+| Draft | 同上 | `/checkout_sessions/{checkout_session_id}` | `GET` | **本文なし**（§4.3、権威ある `CheckoutSession` を返却）。 |
+| Draft | 同上 | `/checkout_sessions/{checkout_session_id}/complete` | `POST` | `payment_data`、任意 `buyer`、条件付き `authentication_result`（3DS 等、§4.4）。 |
+| Draft | 同上 | `/checkout_sessions/{checkout_session_id}/cancel` | `POST` | RFC 本文では **空／省略**（§4.5）。`intent_trace` は別 RFC で拡張。 |
+| Draft | `rfc.delegate_payment.md` | `/agentic_commerce/delegate_payment` | `POST` | `payment_method`（現行 **card**）、`allowance`、`billing_address`、**必須** `risk_signals`、`metadata` 等（§3.2 表）。 |
+| Draft | `rfc.delegate_authentication.md` | `/delegate_authentication` | `POST` | `merchant_id`、`payment_method`、`amount` 必須；任意 `acquirer_details`、`channel`、`checkout_session_id`、`flow_preference` 等（§4.1）。 |
+| Draft | 同上 | `/delegate_authentication/{authentication_session_id}/authenticate` | `POST` | `fingerprint_completion` 必須；条件付き `channel`、`challenge_notification_url` 等（§4.2）。 |
+| Draft | 同上 | `/delegate_authentication/{authentication_session_id}` | `GET` | **本文なし**（§4.3、認証結果・`authentication_result` はレスポンス）。 |
+| Proposal | `rfc.discovery.md` | `/.well-known/acp.json`（well-known URI） | `GET` | **本文なし**（ディスカバリ文書を返却。§ 付近の HTTP 例）。 |
+| Proposal | `rfc.capability_negotiation.md` | `/checkout_sessions` ほかチェックアウト系 | `POST` / `GET` | **Create** リクエストに **`capabilities` 必須**（例: `interventions`）。Update / Complete もリクエストに `capabilities` を載せ得る。レスポンスの `capabilities` は交差結果（§4.4）。 |
+| Proposal | `rfc.affiliate_attribution.md` | `/checkout_sessions`、`/checkout_sessions/{id}/complete` | `POST` | それぞれ **`affiliate_attribution` をオプションで付加**（ファーストタッチ／ラストタッチ、§4.3）。 |
+| Proposal | `rfc.intent_traces.md` | `/checkout_sessions/{checkout_session_id}/cancel` | `POST` | **オプション**で `intent_trace`（`reason_code`、`trace_summary`、`metadata` 等、§3.2）。 |
+| Draft | `rfc.extensions.md` | `/checkout_sessions`（チェックアウト作成・更新） | `POST` | `capabilities.extensions[]` による拡張宣言（フレームワーク）。具体ペイロードは拡張ごと。 |
+| Draft | `rfc.discount_extension.md` | チェックアウト create/update のリクエスト | `POST` | 拡張有効時 **`discounts.codes`**（create/update）、応答側に `discounts.applied` / `rejected`（RFC 本文・スキーマ参照）。 |
+| Draft | `rfc.payment_handlers.md` | （新規パスは定義しない） | — | **`POST /checkout_sessions` 等の既存フロー**内で `capabilities.payment.handlers` と **`POST /agentic_commerce/delegate_payment`** を組み合わせる運用を記述。 |
+| Draft | `rfc.seller_backed_payment_handler.md` | 同上＋`/agentic_commerce/delegate_payment`、`.../complete` | `POST` | ハンドラ宣言は `CheckoutSession`；実体は **delegate_payment と complete** の組合せ（RFC 内フロー記述）。 |
+| Draft | `rfc.orders.md` | （新規 REST エンドポイントは定義しない） | — | 既存 **`Order` スキーマ**のポスト購入フィールド拡張（Webhook 等のペイロード想定）。 |
+
+**補足**: `rfc.agentic_checkout.md` §2.3 は **Webhook を別 OAS/RFC** に委ねる。**Webhook のパス・`Merchant-Signature`** は **`openapi.agentic_checkout_webhook.yaml`** が機械可読 IF。RFC 単体ではパス文字列まで固定していない。
 
 **データモデル** は同名版の `json-schema/` に `schema.agentic_checkout.json`（セッション・注文等の中心）、`schema.delegate_payment.json`、`schema.discount.json`、`schema.extension.json` として分かれている。チェックアウトは `CheckoutSession` を権威ある状態として返し、完了時に `CheckoutSessionWithOrder` で注文を束ねる形が OpenAPI 上の構造と整合する。
 
