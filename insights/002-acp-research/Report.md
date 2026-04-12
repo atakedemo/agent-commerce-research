@@ -191,6 +191,159 @@ GitHub API 上、当該リポジトリには **GitHub Releases（タグ）が存
 
 直近の **changelog で固め済み（2026-01-30）** の柱は、能力交渉、Payment Handlers（破壊的変更）、拡張フレームワークとディスカウント拡張、関連する OpenAPI / JSON Schema / 例の更新に要約できる。上記の多くの SEP は **`unreleased` 側や Issue 段階** にあり、次版スナップショット待ち、またはスポンサー承認待ち、という状態が混在する。
 
+#### Issue コメント追補（追加調査観点）
+
+[Issue #3 のコメント（2026-04-05）](https://github.com/atakedemo/agent-commerce-research/issues/3#issuecomment-4188370376) で、**(1) `Signature` で検証可能な内容**、**(2) 口座振替・PayPay・QuickPay 等の他決済をどう拡張するか** が追加された。以下、当該観点に沿った調査結果である。
+
+##### （1）`Signature` で検証可能な内容
+
+ACP では **「Signature」という名前のヘッダが複数系統**あり、**検証で保証できること**が系統ごとに異なる。
+
+| 系統 | 典型ヘッダ | 検証で主に保証できること（仕様ベース） | 検証に使う素材 |
+|------|------------|----------------------------------------|----------------|
+| **エージェント→マーチャント REST** | `Signature`（`rfc.agentic_checkout.md` 等） | **canonical JSON 化したリクエスト本文**の **改ざん検知**、送信者の **非対称鍵**に紐づく **身元**（公開鍵が帯域外で共有されている前提）、**`Timestamp` との組合せ**による **リプレイの抑制**（bounded skew で SHOULD 検証）。 | 受信側は **クライアント公開鍵**＋アルゴリズム方針（帯域外）。 |
+| **エージェント→PSP `delegate_payment`** | `Signature`（`rfc.delegate_payment.md`） | **委任トークン化リクエスト**の本文整合性・送信者身元（detached 署名、**MUST** 記述）。 | 同上（クライアント秘密鍵／サーバは公開鍵）。 |
+| **マーチャント→プラットフォーム Webhook** | **`Merchant-Signature`**（`openapi.agentic_checkout_webhook.yaml`。**HTTP `Signature` ではない**） | **raw リクエストボディ**の **改ざん検知**、**共有秘密**を知る送信者のみが生成可能な **HMAC**、**タイムスタンプ `t`** による **リプレイ窓**（例: 許容 ±300 秒）。`changelog/unreleased/webhook-signing-stripe-format.md` では **Stripe の Webhook 署名方式**との互換を明示する。 | 受信者は **Webhook 共有秘密**（`Merchant-Signature` の HMAC 検証）。 |
+
+**Stripe との対応**（コメントの「逆算」参照）: [Stripe Webhooks — Signatures](https://stripe.com/docs/webhooks/signatures) では、署名ペイロードに **`timestamp` と body を結合**し、**共有秘密**で HMAC を計算して送信者正当性と **ペイロード完全性** を確認する。ACP の unreleased changelog は **「`t=<unix>,v1=<hex>`、`timestamp + '.' + raw_body` に HMAC-SHA256」** と [Stripe のパターン](https://stripe.com/docs/webhooks/signatures) に揃える旨を記載している。よって **Webhook 側**で検証できるのは主に **(a) 本文が改ざんされていないこと (b) 共有秘密を持つマーチャントが送ったこと (c) タイムスタンプが許容ウィンドウ内であること**（リプレイ攻撃の抑止）である。
+
+一方、**REST の `Signature`（非対称）**で検証できるのは **本文の整合性と鍵ペアに紐づくクライアント身元**であり、**Webhook の HMAC と同じ数学的構造ではない**（レポートの「### 個別調査トピック」§3 も参照）。
+
+##### （2）他の決済（口座振替、PayPay、QuickPay 等）— 設定できる内容と拡張の仕方
+
+**コアの考え方**（`rfc.payment_handlers.md`）: 新しい決済手段は **新しい HTTP エンドポイントを増やすのではなく**、**Payment Handler** として **`handler` の `name`・`version`・`spec`・`config_schema`・`instrument_schemas`・`config`** を宣言し、**`capabilities.payment.handlers`** で交渉する。**`delegate_payment` の 1 エンドポイント**は維持し、**`payment_method` の形態**（oneOf / 判別子）を拡張する設計が基本である。
+
+**追加パラメータの置き場所**（対象エンドポイント別の整理）:
+
+| 対象エンドポイント | 内容 | 具体例 |
+|--------|------|--------|
+| `POST /checkout_sessions`<br>`GET /checkout_sessions/{checkout_session_id}`<br>`PATCH /checkout_sessions/{checkout_session_id}`（`CheckoutSession` 応答） | 小売店・ECがサポートする手段<br>PSP<br>**スキーマ URL**<br>**delegate 要否** | `requires_delegate_payment`<br>`config`（ネットワーク、通貨、merchant_id 等） |
+| `POST /agentic_commerce/delegate_payment` | 資格情報の **instrument**（`payment_method`）と **Allowance**、**risk_signals** | カードは現行どおり、別手段は **新しい `type` 分岐** と **payload スキーマ** |
+| `POST /checkout_sessions/{checkout_session_id}/complete` | **`payment_data`**（`handler_id`＋instrument 等）は **2026-01-30** 以降の Payment Handlers モデルに統合 | ハンドラごとに **instrument の必須フィールド** が異なる |
+
+**抽象化と具体化**: プロトコルは **「ハンドラ ID + スキーマ参照 + delegate 可否」** を抽象化し、**口座振替・ウォレット・QR** 等の**国・事業者固有**の項目は、**ハンドラ仕様書（`spec` URL）と JSON Schema** に具体化するのが意図される。
+* `rfc.capability_negotiation.md` ： `bank_transfer.ach` / `bank_transfer.sepa` 等の **識別子の例** があり
+* `rfc.payment_handlers.md` ：**`dev.acp.tokenized.bank_transfer` — Bank transfers (open for extension)** として **プレースホルダ** が登場する。
+
+**参考 PR：x402の追加提案**:
+**決済手段追加の実例**として **`payment_method.type: crypto`** と **`x402_payload`** を **`delegate_payment`** に載せ、**ウォレット署名**を **facilitator** が検証して **SPT**（共有トークン）を発行する流れを定義する。**口座振替・QR 等も同様に**、「**新ハンドラ名 + 新 instrument スキーマ + delegate_payment の oneOf 拡張**」で足す設計が、**抽象（共通）と具体（手段別）**の分離の手本になる。
+* [PR #111 — SEP: Crypto Payment Method (x402-based)](https://github.com/agentic-commerce-protocol/agentic-commerce-protocol/pull/111)
+* [Issue #109](https://github.com/agentic-commerce-protocol/agentic-commerce-protocol/issues/109)
+
+
+
+##### `POST /agentic_commerce/delegate_payment`
+
+**リクエストパラメータ**（OpenAPI 上は path/query なし。ヘッダは `Authorization`、`Content-Type`、`API-Version`、`Signature` / `Timestamp` 等を参照）:
+
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+API-Version: <version>
+```
+
+**リクエストボディ**（`payment_method.type: crypto` と `x402_payload`）:
+
+<details>
+
+```json
+{
+  "payment_method": {
+    "type": "crypto",
+    "x402_payload": {
+      "x402Version": 2,
+      "accepted": {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "amount": "5000000",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "payTo": "0x...",
+        "maxTimeoutSeconds": 300
+      },
+      "payload": {
+        "signature": "0x...",
+        "authorization": {
+          "from": "0xUserWallet...",
+          "to": "0xFacilitator...",
+          "value": "5000000",
+          "validAfter": 0,
+          "validBefore": 1707400000,
+          "nonce": "0x..."
+        }
+      }
+    }
+  },
+  "allowance": {
+    "reason": "one_time",
+    "max_amount": 500,
+    "currency": "usd",
+    "checkout_session_id": "cs_01HV3P3...",
+    "merchant_id": "acme",
+    "expires_at": "2025-02-05T12:00:00Z"
+  },
+  "risk_signals": [
+    { "type": "crypto_wallet_risk", "score": 5, "action": "authorized" }
+  ],
+  "metadata": {}
+}
+```
+
+</details>
+
+##### `POST /checkout_sessions/{checkout_session_id}/complete`
+
+**リクエストパラメータ**（パス）:
+
+```
+checkout_session_id = cs_01HV3P3...
+```
+
+**リクエストパラメータ**（OpenAPI で参照されるヘッダの例）:
+
+```
+Authorization: Bearer <access_token>
+Content-Type: application/json
+API-Version: <version>
+```
+
+**リクエストボディ**（Issue #109 は **checkout 完了時の `payment_data` がカードと同様に SPT のみ**と明記。`credential.type: spt`）:
+
+```json
+{
+  "payment_data": {
+    "credential": {
+      "type": "spt",
+      "token": "vt_01J8Z3WXYZ9ABC"
+    }
+  }
+}
+```
+
+##### `POST /checkout_sessions` / `GET /checkout_sessions/{checkout_session_id}` / `PATCH /checkout_sessions/{checkout_session_id}`（Payment Handler 宣言の「指定」— 応答）
+
+Issue #109 §7 は **セラーが crypto を広告する**ときの **Payment Handler オブジェクト**を、**`CheckoutSession` に含まれるハンドラ一覧**として示している（**クライアントが送るリクエストボディではない**）。指定の形の例:
+
+<details>
+
+```json
+{
+  "id": "handler_crypto_001",
+  "name": "dev.acp.crypto",
+  "version": "2025-02-05",
+  "spec": "https://acp.dev/handlers/crypto",
+  "requires_delegate_payment": true,
+  "requires_pci_compliance": false,
+  "psp": "stripe",
+  "config": {
+    "method": "crypto",
+    "currency": "USDC",
+    "network": ["eip155:8453", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"]
+  }
+}
+```
+
+</details>
+
 ### 個別調査トピック（Issue 追補）
 
 以下は [Issue #3 — 個別調査トピック](https://github.com/atakedemo/agent-commerce-research/issues/3) に照らした追加整理である。根拠はミラー上の `docs/`・`rfcs/`・`spec/unreleased/` および各 RFC 本文。
@@ -277,6 +430,9 @@ RFC は **アルゴリズム（Ed25519 / ES256 等）を帯域外で公開する
 - （Target）`rfcs/rfc.agentic_checkout.md`、`rfc.delegate_payment.md`、`rfc.delegate_authentication.md`（個別調査: `Signature`）
 - （Target）`spec/2026-01-30/openapi/openapi.agentic_checkout.yaml`、同 `openapi.delegate_payment.yaml`
 - （Target）`changelog/2026-01-30.md`、`changelog/unreleased/mcp-transport-binding.md`
+- （調査観点）[Issue #3 コメント #4188370376](https://github.com/atakedemo/agent-commerce-research/issues/3#issuecomment-4188370376)（`Signature` 検証可能範囲・他決済拡張）
+- （Target）`changelog/unreleased/webhook-signing-stripe-format.md`（Webhook `Merchant-Signature` の Stripe 整合）
+- （Target）[PR #111](https://github.com/agentic-commerce-protocol/agentic-commerce-protocol/pull/111) / [Issue #109](https://github.com/agentic-commerce-protocol/agentic-commerce-protocol/issues/109)（crypto / x402 決済手段追加の例）
 
 ## 主要ファクト
 
@@ -294,3 +450,4 @@ RFC は **アルゴリズム（Ed25519 / ES256 等）を帯域外で公開する
 - **`rfcs/`**: 少なくとも **12 本**の RFC が **チェックアウト・委任決済／認証・能力交渉・ハンドラ・拡張・ディスカバリ等**を人間可読に分割定義。
 - **`Signature`**: チェックアウト RFC では **canonical JSON＋`Timestamp`・アルゴリズムは帯域外**で **RECOMMENDED**；Delegate Authentication では **REQUIRED**；Delegate Payment では detached **MUST**；Webhook 側は **`Merchant-Signature`（HMAC）** が別系統。OpenAPI の `Signature` ヘッダ説明は **webhook 用文言**に寄せられており RFC と短絡できない。
 - **`Signature` 場面別（鍵と対象）**: **Checkout／Delegate Payment／Delegate Authentication の送信者**は **自らの非対称秘密鍵**で、主に **canonical JSON 化したリクエスト本文**（DP は **detached**）に署名する前提。**検証側**は **受信サーバが帯域外の公開鍵方針**で検証（Auth は **MUST**、他は **SHOULD** 等、RFC による）。**Webhook** は **`Signature` ではなく `Merchant-Signature`** で **`timestamp + "." + raw_body`** に **共有秘密の HMAC**。
+- **Issue #3 コメント追補（2026-04-05）**: **`Signature`（非対称）**と **`Merchant-Signature`（HMAC・共有秘密）** は検証できる性質が異なる；後者は unreleased changelog で **Stripe Webhook 署名**に揃える記述がある。**口座振替・ウォレット等**は **Payment Handlers＋`delegate_payment` の手段別拡張**が基本で、**PR #111（x402 / crypto）** がそのパターンの一例。
