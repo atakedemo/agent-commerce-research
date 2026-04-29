@@ -1,210 +1,129 @@
 # 設計概要
 
-このリポジトリ（a-sandbox-ec）は、Medusa v2 バックエンドと Next.js 15 ストアフロントからなるモノレポであり、[Medusa DTC Starter](https://github.com/medusajs/dtc-starter) 系の構成で、商品閲覧・カート・チェックアウト・会員と注文管理までを一つのデモ用 EC サンドボックスとしてまとめている。
+本ディレクトリ [`demos/01-sample-ucp_ap2`](../) は、ヘッドレス EC（Medusa v2 と Next.js 15 の [Medusa DTC Starter](https://github.com/medusajs/dtc-starter) 系）を **「既存 EC バックエンド」** として置き、[Universal Commerce Protocol (UCP)](https://github.com/Universal-Commerce-Protocol/ucp) Shopping の MCP 束縛に沿った **エージェント向け MCP サーバー**（[`b-mcp-server/`](../b-mcp-server/)）を同じデモ内で扱えるようにしたサンドボックスである。
+
+詳細な **アクター間シーケンス**は [`sequence.md`](sequence.md)、**各 MCP Tool の入出力・例・Medusa Store API との対応**は [`mcp-reference.md`](mcp-reference.md)、ストア公開 HTTP の一覧は [`api-reference.md`](api-reference.md) を正とする。
 
 ## 目的
 
-本サンドボックスの主な目的は、ヘッドレスコマースの「API バックエンド + 店頭 UI」をローカルで一括起動し、カスタム API や Admin、ストアフロントの拡張ポイントを追いやすい形で保持することである。本番用の全機能網羅ではなく、Medusa 標準のコアフロー（リージョン・販売チャネル・注文・カート等）上に、最小限のカスタムルート（`/store/custom`・`/admin/custom`）を置けることを前提とする。
+- **ブラウザ利用者**: `a-sandbox-ec` で商品閲覧・カート・チェックアウト・会員・注文管理まで一通り確認できる。
+- **エージェント連携検討**: マーチャント側は `/.well-known/ucp` で宣言される **`services["dev.ucp.shopping"]` の MCP 用エンドポイントを 1 つ** とし、その **同一 MCP セッション**上で `tools/call` を通じてカタログ・カート・チェックアウトの各 Tool を呼び分ける、という前提（[`sequence.md` §7 の Assumptions](sequence.md#7-assumptions) と整合）。
+- **規格との対応関係**: UCP の機械可読な定義は上流の [`mcp.openrpc.json`](https://github.com/Universal-Commerce-Protocol/ucp/blob/main/source/services/shopping/mcp.openrpc.json)；本デモでは [`references/ucp-shopping-mcp.openrpc.json`](../references/ucp-shopping-mcp.openrpc.json) にミラー。
+
+注: `b-mcp-server` は **チェックアウト系 5 Tool** を中心にインメモリ実装し、環境変数が揃っている場合のみ Medusa と一部疎通する。**カタログ・カートの各 Tool は OpenRPC と `mcp-reference.md` で整理されているが、実装コード側は未搭載の場合がある**。実装状態の補足は [`mcp-reference.md`](mcp-reference.md) 冒頭および補足節を参照。
 
 ## ディレクトリ構成
 
 ```
-a-sandbox-ec/
-├── package.json                 # ワークスペース / turbo スクリプト
-├── turbo.json
-├── apps/
-│   ├── backend/                 # Medusa 2.14 アプリケーション
-│   │   ├── medusa-config.ts
-│   │   ├── instrumentation.ts
-│   │   └── src/
-│   │       ├── api/              # ファイルベース API ルート
-│   │       ├── admin/            # Admin 拡張（i18n 等）
-│   │       ├── migration-scripts/ # 初期シード
-│   │       ├── modules/
-│   │       ├── subscribers/
-│   │       └── workflows/
-│   └── storefront/               # Next.js 15 ストアフロント
-│       └── src/
-│           ├── app/              # App Router（[countryCode] 等）
-│           ├── lib/              # JS SDK ラッパ、データ取得、クッキー
-│           ├── modules/         # 画面用コンポーネント群
-│           └── middleware.ts
-└── docs/                         # 本ドキュメント
-    ├── design-overview.md
+01-sample-ucp_ap2/
+├── a-sandbox-ec/                # Medusa + Next.js モノレポ（デモ用 EC）
+│   ├── package.json
+│   ├── turbo.json
+│   └── apps/
+│       ├── backend/             # Medusa（Store/Admin API、シード等）
+│       └── storefront/          # Next.js 15 ストアフロント
+├── b-mcp-server/                # UCP Shopping に沿った MCP（stdio）
+│   └── src/server.js
+├── references/
+│   └── ucp-shopping-mcp.openrpc.json
+└── docs/
+    ├── design-overview.md       # 本書
+    ├── sequence.md              # UCP 接続シーケンス（MCP 前提）
+    ├── mcp-reference.md         # MCP Tool 一覧・入力出力例
+    ├── api-reference.md         # HTTP Store / Admin と関連
     ├── state-transition.md
     └── er.md
 ```
 
-## システム構成
+## システム構成（レイヤ構造）
 
-- **ストアフロント（`apps/storefront`）**: Next.js が `[countryCode]` プレフィックス付き URL で国・リージョンを解釈し、`@medusajs/js-sdk` 経由で Medusa Store API を呼び出す。ミドルウェアでリージョン解決とクッキー付与を行う。
-- **バックエンド（`apps/backend`）**: Medusa が PostgreSQL 上にコマースドメインを永続化し、Store/Admin 向け HTTP API、埋め込み Admin、シード用ワークフロー（`initial-data-seed`）を提供する。
+- **Human チャネル（`a-sandbox-ec`）**: Next.js が `[countryCode]` を解釈し、`@medusajs/js-sdk` で Medusa Store API を呼ぶ。ミドルウェアでリージョンとクッキー。ここは従来のヘッドレス店頭であり、**MCP と直結しない**経路でも EC を利用できる。
+- **Agent チャネル（MCP）**: AI エージェントのアプリ側バックエンドが **単一 MCP 接続**で `search_catalog` / `get_product` / `lookup_catalog`、`create_cart` / `get_cart` / `update_cart` / `cancel_cart`、`create_checkout` / `get_checkout` / `update_checkout` / `complete_checkout` / `cancel_checkout` 等を順にまたは必要に応じて呼ぶ（論理順序の全体像は [`sequence.md`](sequence.md) §1〜§3）。
+- **MCP と既存 EC の関係**: MCP 実装が **アダプタ**として動き、内部的に Medusa の Store API（`POST /store/carts` など）へマッピングする想定。**UCP の `Checkout` と Medusa のカート/注文は 1:1 ではなく**（[`sequence.md`](sequence.md#7-assumptions)）、フィールド対応はアダプタ設計として別問題として扱う。
+- **`b-mcp-server` と Medusa**: [`mcp-reference.md`](mcp-reference.md) 冒頭の設計概要どおり、`EC_BACKEND_URL` と `EC_PUBLISHABLE_KEY` が揃っている場合、`create_checkout` の処理中などに **限定して** HTTP で Medusa と連携し、応答に `_ec_mirror` を載せられる。チェックアウト状態本体は開発用に **プロセス内メモリ**（再起動で消失）。
 
-## 主要コンポーネント
+## 処理の流れ（UCP／MCP 観点の要約）
+
+[`sequence.md`](sequence.md) と整合させた抽象は次のとおり。
+
+| フェーズ | 主な MCP Tool（一例） | コメント |
+| -------- | ---------------------- | -------- |
+| 検索・詳細 | `search_catalog`、`get_product`（複数 ID は `lookup_catalog`） | `meta.ucp-agent.profile` 等、`meta` 必須（[`mcp-reference.md`](mcp-reference.md) §1）。 |
+| カート | なければ `create_cart`、あり得る経路として `get_cart` → **クライアント側で行マージ** → `update_cart` | **`update_cart` はカート全体の置換**（規格）；行を失わずに足すときは現状態を読んでから送る。[`cart.md`](../../../references/specification/community/ucp/docs/specification/cart.md) / [`sequence.md`](sequence.md) §2。 |
+| チェックアウト | `create_checkout`（`cart_id` でカートから引き継ぎうる場合はプロファイル次第）、`update_checkout`、`get_checkout`、`complete_checkout` / `cancel_checkout` | **`complete_checkout` / `cancel_checkout` では `meta.idempotency-key` 必須**（OpenRPC）。本デモの `complete_checkout` の Medusa `/complete` 呼び出しは未実装の旨は [`mcp-reference.md`](mcp-reference.md) §12。 |
+
+役割のみの読み替え用の抽象シーケンスは [`sequence.md`](sequence.md) §4。
+
+規格側の詳細リンク（カタログ・カート）は [`sequence.md`](sequence.md) の冒頭（仕様リンク群）および、リポジトリルートの [`references/specification/community/ucp/`](../../../references/specification/community/ucp/) を参照できる。
+
+## 主要コンポーネント（`a-sandbox-ec` / HTTP）
+
+人間向け店頭および Medusa が提供する公開 API は、変更のないサブツリー `a-sandbox-ec` が担う。
 
 ### バックエンド HTTP / 設定
-- 対応ファイル: `apps/backend/medusa-config.ts`
-- 責務: データベース接続、CORS、JWT / Cookie シークレット等の `projectConfig` を環境変数から読み込み、Medusa サーバの挙動を定義する。
+
+- **対応**: `a-sandbox-ec/apps/backend/medusa-config.ts`
+- **責務**: DB 接続、`projectConfig`（CORS、JWT / Cookie シークレット等）。
 
 ### カスタム Store / Admin ルート
-- 対応ファイル: `apps/backend/src/api/store/custom/route.ts`、`apps/backend/src/api/admin/custom/route.ts`
-- 責務: Medusa のファイルベースルーティングに沿ったサンプル GET。疎通確認や拡張の足がかりとして置かれている（現状は 200 のみ返却）。
+
+- **対応**: `a-sandbox-ec/apps/backend/src/api/store/custom/route.ts`、`admin/custom/route.ts`
+- **責務**: ファイルベースルーティングのサンプル GET（疎通・拡張の足場）。
 
 ### 初期データシード
-- 対応ファイル: `apps/backend/src/migration-scripts/initial-data-seed.ts`
-- 責務: `createSalesChannelsWorkflow`、`createRegionsWorkflow`、`createProductsWorkflow` 等のコアフローで、販売チャネル、API キー、店舗、リージョン、税、商品・在庫・配送オプションなどのデモ用データを投入する。
+
+- **対応**: `a-sandbox-ec/apps/backend/src/migration-scripts/initial-data-seed.ts`
+- **責務**: 販売チャネル、リージョン、商品・在庫等のデモデータ投入。
 
 ### ストアフロント SDK とデータ層
-- 対応ファイル: `apps/storefront/src/lib/config.ts`、`apps/storefront/src/lib/data/cart.ts` 他
-- 責務: `Medusa` JS SDK インスタンス（publishable key・base URL）を提供し、Server Action 等から `/store/carts` 等を呼び、カート ID のクッキー管理とキャッシュ再検証（`revalidateTag`）を行う。
+
+- **対応**: `a-sandbox-ec/apps/storefront/src/lib/config.ts`、`lib/data/cart.ts` 等
+- **責務**: JS SDK、カート ID のクッキー、`retrieveCart` / `getOrSetCart` と `revalidateTag`。
 
 ### リージョン解決ミドルウェア
-- 対応ファイル: `apps/storefront/src/middleware.ts`
-- 責務: バックエンドの `GET /store/regions` を（Edge 互換の `fetch` で）呼び、URL・地理情報・既存クッキーから国コードを決め、以降の料金表示・配達エリアの前提となるリージョン文脈を揃える。
 
-## 主要データ
+- **対応**: `a-sandbox-ec/apps/storefront/src/middleware.ts`
+- **責務**: `GET /store/regions` に基づく国コード・クッキー。
 
-- **Store / SalesChannel / ApiKey（publishable）**: 店舗と販売チャネル、店頭用公開 API キーの紐づけ。シードで作成される（`createStoresWorkflow` 等）。
-- **Region / Country / Tax**: 多地域・多通貨の前提。シードの `countries` 配列と `createRegionsWorkflow`、`createTaxRegionsWorkflow` に対応。
-- **Product / ProductVariant / Collection / Category**: カタログ。シードの `createProductsWorkflow` 等で投入。
-- **Cart / LineItem（store）**: 未ログイン・ログイン問わず、ストア API 上の一時的な買い物かご。ID はクッキーで追跡（`getCartId` / `setCartId`）。
-- **Order / Customer / Address**: 注文確定後の永続レコード。顧客アカウント・注文履歴画面のデータソース。エンティティ定義の本体は Medusa コア（PostgreSQL スキーマ）側にある。
+## MCP 共通入力・Tool と HTTP の対応（参照先）
 
-## リクエスト/状態の流れ
+全 Tool の入力形と Medusa の対応表は **`mcp-reference.md` に集約**されている。
 
-1. 利用者がストアの URL（例: `/[countryCode]/...`）にアクセスする。
-2. `middleware.ts` がリージョン一覧を取得し、国コードとリージョンを解決し、必要なクッキーを付与する。
-3. ページと Server Action が `sdk` 経由で `retrieveCart`・商品一覧取得等を行い、カート未作成なら `getOrSetCart` で新規カートを作成しクッキーに保存する。
-4. チェックアウト完了後、Medusa 側で注文が確定し、確認ページ・マイアカウントの注文一覧で同じ注文 ID を参照する。
+- **共通 `meta`**（`ucp-agent.profile`、`complete` / `cancel` 時の `idempotency-key` など）: [`mcp-reference.md` §1](mcp-reference.md#1-共通入力meta)。
+- **カタログ・カート・チェックアウトの一覧と Store API の対応**: [`mcp-reference.md` §2](mcp-reference.md#2-mcp-tool と-apireferencemdhttp-apiの対応一覧)。
+- **各 Tool の説明・`arguments`/応答例**: カタログ・カート §3〜§8、チェックアウト §9〜§13。
+
+## 主要データ（Medusa／店頭）
+
+- **SalesChannel / ApiKey（publishable）**: ストアシードと店頭キー。
+- **Region / Country / Tax**: 多地域前提。ミドルウェア・カート作成の `region_id` と関連。
+- **Product / Variant / Collection / Category**: カタログ。MCP の `search_catalog` 等のアダプタ先は [`mcp-reference.md`](mcp-reference.md) §2.1。
+- **Cart / LineItem**: ブラウザはクッキーでカート ID を追跡。MCP 側は `create_cart` 等が UCP 形の資源となる（Medusa と ID が同一とは限らない）。
+- **Order / Customer**: 注文確定後。**UCP MCP → Medusa の注文確定**の完全自動化は実装により異なり、本デモではチェックアウト完了処理が簡略化されている点に注意。
+
+## リクエスト／状態の流れ（ブラウザ利用）
+
+1. 利用者が `/[countryCode]/...` にアクセスする。
+2. `middleware.ts` がリージョンとクッキーを揃える。
+3. Server Action 等が SDK で `retrieveCart`・商品一覧取得等を行い、必要なら `getOrSetCart` でカートを作成しクッキーに保存する。
+4. チェックアウト完了後に注文が確定し、確認ページ・アカウントから参照する。
 
 ## 制約と補足
 
-- ドメインエンティティのスキーマは Medusa フレームワークが提供する DB 移行群に従い、本リポジトリ独自の大規模なデータモデル追加は想定されない（カスタムは主に `src/api`・ワークフロー・Admin/Storefront 側）。
-- カスタム API (`/store/custom`・`/admin/custom`) はプレースホルダーに近い最小実装である。
-- README に記載の「Order transfer between accounts（アカウント間の注文引き継ぎ）」は、ストアフロントの `order/.../transfer/...` ルート等で扱うフローが含まれる（標準 DTC スタータの範囲）。
+- **単一 MCP エンドポイント前提**および **認証・署名の検証が本デモで未実装な部分**については [`sequence.md` §7](sequence.md#7-assumptions) を参照。
+- **カスタム HTTP**（`/store/custom` 等）はプレースホルダに近い。
+- **エージェント向け MCP サーバー起動**（開発用）は [`sequence.md`](sequence.md#6-mcp-サーバーの起動開発用)および [`mcp-reference.md`](mcp-reference.md#14-起動例開発用)（`cd b-mcp-server` → `npm install` → `npm start`。任意で `EC_BACKEND_URL` と `EC_PUBLISHABLE_KEY`）。
 
-## カスタマイズを行う対象
+## カスタマイズの起点（人間向け店頭・バックエンド）
 
-### フロントエンド
+接続先・キー・カート処理の典型例はこれまでどおり次のファイルが起点となる。コード全文は該当ファイルを参照する。
 
-#### Medusa JS SDK の接続先と公開キー
+| 領域 | 主なファイル |
+| ----- | ------------- |
+| Medusa SDK 接続 | `a-sandbox-ec/apps/storefront/src/lib/config.ts`、`NEXT_PUBLIC_*` |
+| リージョン前処理 | `a-sandbox-ec/apps/storefront/src/middleware.ts`、`BACKEND_URL` 未設定時のエラー |
+| カート取得・キャッシュ | `a-sandbox-ec/apps/storefront/src/lib/data/cart.ts` の `retrieveCart`・`getOrSetCart` |
+| Medusa project 設定 | `a-sandbox-ec/apps/backend/medusa-config.ts` |
+| 初期シード | `a-sandbox-ec/apps/backend/src/migration-scripts/initial-data-seed.ts` |
 
-`apps/storefront/src/lib/config.ts` で、バックエンド URL および `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` 相当の `publishableKey` を SDK に渡す。接続先変更や本番用キー切替はここ（と `.env.local`）が起点になる。
-
-```typescript
-export const sdk = new Medusa({
-  baseUrl: MEDUSA_BACKEND_URL,
-  debug: process.env.NODE_ENV === "development",
-  publishableKey: process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY,
-})
-```
-
-#### 国・リージョンの前処理
-
-`apps/storefront/src/middleware.ts` は Edge 上で `GET ${BACKEND_URL}/store/regions` を呼び、国コードマップを構築する。バックエンド URL 未設定時は例外になるため、新環境ではこの前提を満たす。
-
-```typescript
-if (!BACKEND_URL) {
-  throw new Error(
-    "Middleware.ts: Error fetching regions. Did you set up regions in your Medusa Admin and define a NEXT_PUBLIC_MEDUSA_BACKEND_URL environment variable."
-  )
-}
-```
-
-#### カート取得と再検証
-
-`apps/storefront/src/lib/data/cart.ts` の `retrieveCart` は `sdk.client.fetch` で `/store/carts/${id}` を呼び、フィールド拡張やキャッシュタグ（`getCacheOptions("carts")`）と連携する。カート項目の取り扱いを変える場合は、ここと `getOrSetCart` 周辺を追う。
-
-```typescript
-return await sdk.client
-  .fetch<HttpTypes.StoreCartResponse>(`/store/carts/${id}`, {
-    method: "GET",
-    query: { fields },
-    headers,
-    next,
-    cache: "force-cache",
-  })
-  .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
-  .catch(() => null)
-```
-
-#### 価格・リージョン付きのカート新規作成
-
-`getOrSetCart` でリージョン未解決時は例外とし、カート未存在時に `sdk.store.cart.create` で `region_id` と `locale` を渡して作成する。新しい必須パラメータをカートに載せる場合の典型的な拡張点である。
-
-```typescript
-if (!cart) {
-  const locale = await getLocale()
-  const cartResp = await sdk.store.cart.create(
-    { region_id: region.id, locale: locale || undefined },
-    {},
-    headers
-  )
-  cart = cartResp.cart
-  await setCartId(cart.id)
-}
-```
-
-### バックエンド
-
-#### 環境に依存するプロジェクト設定
-
-`apps/backend/medusa-config.ts` の `defineConfig` で、DB 接続と CORS、JWT / Cookie シークレットを定義する。ローカルと本番で差し替わる主な箇所である。
-
-```typescript
-module.exports = defineConfig({
-  projectConfig: {
-    databaseUrl: process.env.DATABASE_URL,
-    http: {
-      storeCors: process.env.STORE_CORS!,
-      adminCors: process.env.ADMIN_CORS!,
-      authCors: process.env.AUTH_CORS!,
-      jwtSecret: process.env.JWT_SECRET || "supersecret",
-      cookieSecret: process.env.COOKIE_SECRET || "supersecret",
-    }
-  }
-})
-```
-
-#### 店舗向けカスタム API のエンドポイント
-
-`apps/backend/src/api/store/custom/route.ts` は `/store/custom` への GET を実装する。独自の集約レスポンスや Webhook 互換の入口を足す場合は、同階層の `route.ts` パターンに倣い HTTP メソッドをエクスポートして拡張する。
-
-```typescript
-export async function GET(
-  req: MedusaRequest,
-  res: MedusaResponse
-) {
-  res.sendStatus(200);
-}
-```
-
-#### 管理向けカスタム API
-
-`apps/backend/src/api/admin/custom/route.ts` は Admin 用のプレースホルダ。バックオフィス専用の集計や一括操作 API を足す場合の配置例である。
-
-```typescript
-export async function GET(
-  req: MedusaRequest,
-  res: MedusaResponse
-) {
-  res.sendStatus(200);
-}
-```
-
-#### 初期シード（マスター・在庫・商品の投入方針）
-
-`apps/backend/src/migration-scripts/initial-data-seed.ts` 先頭付近で、販売チャネル・API キー・店舗を作成し、以降のリージョン・税・商品・在庫に繋げる。ローカル DB を「決まったデモ状態」に揃えたい場合の中心ファイルである。
-
-```typescript
-} = await createSalesChannelsWorkflow(container).run({
-  input: {
-    salesChannelsData: [
-      {
-        name: "Default Sales Channel",
-        description: "Created by Medusa",
-      },
-    ],
-  },
-});
-```
+README にある「アカウント間の注文引き継ぎ」（`order/.../transfer/...` 等）は DTC Starter 由来の機能としてストアフロントに含まれる。
