@@ -2,8 +2,11 @@
 
 対象: `apps/backend`（Medusa 2.14）。開発時の既定ベース URL は `http://localhost:9000` を想定する。
 
+- **OpenAPI 3.0（本書の HTTP API）**: 同ディレクトリの [`openapi.yaml`](openapi.yaml)（MCP Tools は含まない）。
+
 - **本リポジトリ独自実装**は `src/api` 配下のファイルルートのみ（2 本）。
 - **その他**は Medusa コアの Store / Admin / Auth API として同一プロセスで公開される。フルスキーマは [Store API](https://docs.medusajs.com/api/store)・[Admin API](https://docs.medusajs.com/api/admin) を参照のこと。以下の「**ストア系（本デモ利用）**」は、`@medusajs/js-sdk@2.14.0` が実際に使用する HTTP メソッドとパスに合わせた。
+- **MCP Tools（`b-mcp-server`）** は HTTP の対象外。[**`mcp-reference.md`**](mcp-reference.md) に設計・ツール一覧を切り出した（UCP Shopping OpenRPC のチェックアウト系メソッド名に対応）。
 
 ## 共通ヘッダ
 
@@ -902,6 +905,12 @@ curl -sS -G -H "Authorization: Bearer $ADMIN_JWT" \
   "limit": 5
 }
 ```
+
+---
+
+## MCP（エージェント / `b-mcp-server`）
+
+Model Context Protocol 経由のツール定義・起動方法は **[`mcp-reference.md`](mcp-reference.md)** を参照（本書は Medusa HTTP API のみ対象）。
 
 ---
 

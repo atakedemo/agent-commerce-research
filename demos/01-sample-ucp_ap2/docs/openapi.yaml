@@ -1,0 +1,1038 @@
+openapi: 3.0.3
+info:
+  title: a-sandbox-ec Medusa API（api-reference 準拠）
+  description: |
+    `docs/api-reference.md` に列挙された HTTP API を OpenAPI 3.0 に落とし込んだもの。
+    実体は Medusa v2.14（Store / Admin / Auth）および本リポジトリのカスタム 2 ルート。
+
+    - 完全なリクエスト/レスポンススキーマは [Medusa Store API](https://docs.medusajs.com/api/store) / [Admin API](https://docs.medusajs.com/api/admin) を正とする。
+    - **MCP Tools（`b-mcp-server`）は HTTP ではないため本ファイルには含めない。** 人向け設計は `docs/mcp-reference.md`、OpenRPC は `references/ucp-shopping-mcp.openrpc.json` を参照。
+  version: "1.0.0"
+  contact:
+    name: ucp-research demo
+
+servers:
+  - url: http://localhost:9000
+    description: 開発時の既定（`apps/backend`）
+
+tags:
+  - name: "1. カスタム API"
+    description: 本リポジトリ `src/api` のプレースホルダ
+  - name: "2. 認証（Auth）"
+    description: 会員登録・ログイン・セッション
+  - name: "3. ストア（Store）"
+    description: 本デモの DTC ストアフロント利用ルート
+  - name: "4. Admin"
+    description: 管理 API（文書に明示された例のみ）
+
+components:
+  securitySchemes:
+    publishableApiKey:
+      type: apiKey
+      in: header
+      name: x-publishable-api-key
+      description: 店舗用公開キー `pk_...`
+    customerBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: ログイン済み顧客 JWT
+    registrationBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 会員登録フロー用一時トークン
+    adminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 管理者 JWT（user スコープ）
+
+  parameters:
+    RegionId:
+      name: region_id
+      in: query
+      schema: { type: string }
+      description: リージョン ID（例 `reg_01...`）
+    CartIdQuery:
+      name: cart_id
+      in: query
+      schema: { type: string }
+      description: カート ID
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0 }
+    OrderSort:
+      name: order
+      in: query
+      schema: { type: string }
+      description: ソート（例 `-created_at`）
+    Fields:
+      name: fields
+      in: query
+      schema: { type: string }
+      description: Medusa fields / expand 指定
+    CategoryHandle:
+      name: handle
+      in: query
+      schema: { type: string }
+      description: カテゴリハンドル（例 `clothing/shirts`）
+    CartIdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: カート ID
+    LineItemId:
+      name: line_id
+      in: path
+      required: true
+      schema: { type: string }
+      description: ラインアイテム ID
+    RegionIdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: リージョン ID
+    VariantId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: バリアント ID
+    CollectionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: コレクション ID
+    ShippingOptionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: 配送オプション ID
+    PaymentCollectionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: Payment collection ID
+    OrderId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+      description: 注文 ID
+    AddressId:
+      name: addressId
+      in: path
+      required: true
+      schema: { type: string }
+      description: 顧客住所 ID
+
+  headers:
+    MedusaLocale:
+      description: 取り扱いロケール
+      schema: { type: string }
+
+  schemas:
+    EmptyResponse:
+      type: object
+      additionalProperties: true
+    MedusaObject:
+      type: object
+      additionalProperties: true
+      description: Medusa エンティティ（詳細は公式 API 参照）
+
+paths:
+  /store/custom:
+    get:
+      tags: ["1. カスタム API"]
+      summary: ストア疎通プレースホルダ
+      operationId: getStoreCustom
+      security: [{ publishableApiKey: [] }]
+      responses:
+        "200":
+          description: 本文なし OK
+
+  /admin/custom:
+    get:
+      tags: ["1. カスタム API"]
+      summary: 管理疎通プレースホルダ
+      operationId: getAdminCustom
+      security: [{ adminBearer: [] }]
+      responses:
+        "200":
+          description: 本文なし OK
+
+  /auth/customer/emailpass/register:
+    post:
+      tags: ["2. 認証（Auth）"]
+      summary: メール/パスワード会員登録（一時トークン）
+      operationId: authCustomerEmailpassRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: 登録用トークン
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+
+  /auth/customer/emailpass:
+    post:
+      tags: ["2. 認証（Auth）"]
+      summary: メール/パスワードログイン
+      operationId: authCustomerEmailpass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: JWT または OAuth `location`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  location: { type: string, format: uri }
+
+  /auth/session:
+    delete:
+      tags: ["2. 認証（Auth）"]
+      summary: セッション型ログアウト
+      operationId: authSessionDelete
+      parameters:
+        - name: Cookie
+          in: header
+          schema: { type: string }
+          description: セッションクッキー（実装依存）
+      responses:
+        "200":
+          description: OK
+
+  /store/regions:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: リージョン一覧
+      operationId: storeListRegions
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  regions:
+                    type: array
+                    items: { $ref: "#/components/schemas/MedusaObject" }
+                  count: { type: integer }
+                  offset: { type: integer }
+                  limit: { type: integer }
+
+  /store/regions/{id}:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: リージョン取得
+      operationId: storeGetRegion
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RegionIdPath"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  region: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/locales:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: ロケール一覧
+      operationId: storeListLocales
+      security: [{ publishableApiKey: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/products:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: 商品一覧
+      operationId: storeListProducts
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RegionId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Fields"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/product-variants/{id}:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: バリアント取得
+      operationId: storeGetProductVariant
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/VariantId"
+        - $ref: "#/components/parameters/Fields"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  variant: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/collections:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: コレクション一覧
+      operationId: storeListCollections
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/collections/{id}:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: コレクション取得
+      operationId: storeGetCollection
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CollectionId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/product-categories:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: プロダクトカテゴリ
+      operationId: storeListProductCategories
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CategoryHandle"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/carts:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: カート作成
+      operationId: storeCreateCart
+      security: [{ publishableApiKey: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              properties:
+                region_id: { type: string }
+                email: { type: string, format: email }
+                locale: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/carts/{id}:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: カート取得
+      operationId: storeGetCart
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+        - $ref: "#/components/parameters/Fields"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: カート更新（送付先・プロモ等）
+      operationId: storeUpdateCart
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/carts/{id}/line-items:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: ラインアイテム追加
+      operationId: storeAddLineItem
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variant_id, quantity]
+              properties:
+                variant_id: { type: string }
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/carts/{id}/line-items/{line_id}:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: ラインアイテム数量更新
+      operationId: storeUpdateLineItem
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+        - $ref: "#/components/parameters/LineItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quantity: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+    delete:
+      tags: ["3. ストア（Store）"]
+      summary: ラインアイテム削除
+      operationId: storeDeleteLineItem
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+        - $ref: "#/components/parameters/LineItemId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/carts/{id}/shipping-methods:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 配送方法の選択
+      operationId: storeSetShippingMethod
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [option_id]
+              properties:
+                option_id: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/shipping-options:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: 配送オプション一覧（カート紐づけ）
+      operationId: storeListShippingOptions
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/CartIdQuery"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/shipping-options/{id}/calculate:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 配送料計算
+      operationId: storeCalculateShippingOption
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ShippingOptionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cart_id]
+              properties:
+                cart_id: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/payment-providers:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: 決済プロバイダ一覧
+      operationId: storeListPaymentProviders
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RegionId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/payment-collections:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: Payment collection 作成（カート用）
+      operationId: storeCreatePaymentCollection
+      security: [{ publishableApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cart_id]
+              properties:
+                cart_id: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/payment-collections/{id}/payment-sessions:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: Payment session 初期化
+      operationId: storeCreatePaymentSession
+      security: [{ publishableApiKey: [] }]
+      parameters:
+        - $ref: "#/components/parameters/PaymentCollectionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider_id]
+              properties:
+                provider_id: { type: string }
+                data:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/carts/{id}/complete:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: カート完了（注文確定）
+      operationId: storeCompleteCart
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+      responses:
+        "200":
+          description: 'レスポンス type が order（成功）または cart（エラー時再編集）'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  type: { type: string, enum: [order, cart] }
+                  order: { $ref: "#/components/schemas/MedusaObject" }
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+                  error: { type: object, additionalProperties: true }
+
+  /store/carts/{id}/customer:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 認証顧客へのカート紐づけ
+      operationId: storeLinkCartCustomer
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/CartIdPath"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cart: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/orders:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: 注文一覧（ログイン顧客）
+      operationId: storeListOrders
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/OrderSort"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/orders/{id}:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: 注文取得
+      operationId: storeGetOrder
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/orders/{id}/transfer/request:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 注文受け渡しリクエスト
+      operationId: storeOrderTransferRequest
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/orders/{id}/transfer/cancel:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 注文受け渡しキャンセル
+      operationId: storeOrderTransferCancel
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/orders/{id}/transfer/accept:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 注文受け渡し承諾
+      operationId: storeOrderTransferAccept
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/orders/{id}/transfer/decline:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 注文受け渡し拒否
+      operationId: storeOrderTransferDecline
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/customers:
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 顧客作成（登録トークン）
+      operationId: storeCreateCustomer
+      security:
+        - publishableApiKey: []
+          registrationBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              properties:
+                email: { type: string, format: email }
+                first_name: { type: string }
+                last_name: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/customers/me:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: ログイン中の顧客
+      operationId: storeGetCustomerMe
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/Fields"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer: { $ref: "#/components/schemas/MedusaObject" }
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 顧客プロフィール更新
+      operationId: storeUpdateCustomerMe
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  customer: { $ref: "#/components/schemas/MedusaObject" }
+
+  /store/customers/me/addresses:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: 顧客住所一覧
+      operationId: storeListCustomerAddresses
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 顧客住所作成
+      operationId: storeCreateCustomerAddress
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /store/customers/me/addresses/{addressId}:
+    get:
+      tags: ["3. ストア（Store）"]
+      summary: 顧客住所取得
+      operationId: storeGetCustomerAddress
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/AddressId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      tags: ["3. ストア（Store）"]
+      summary: 顧客住所更新
+      operationId: storeUpdateCustomerAddress
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/AddressId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    delete:
+      tags: ["3. ストア（Store）"]
+      summary: 顧客住所削除
+      operationId: storeDeleteCustomerAddress
+      security:
+        - publishableApiKey: []
+          customerBearer: []
+      parameters:
+        - $ref: "#/components/parameters/AddressId"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /admin/products:
+    get:
+      tags: ["4. Admin"]
+      summary: 商品一覧（例）
+      description: |
+        Medusa Admin API の一例。`docs/api-reference.md` セクション 4 に掲載。
+        その他の Admin ルートは公式ドキュメント参照。
+      operationId: adminListProducts
+      security: [{ adminBearer: [] }]
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
