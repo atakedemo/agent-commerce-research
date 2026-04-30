@@ -1,630 +1,389 @@
 # 調査レポート
 
-## 対象Issue
+## 対象 Issue
 
-* **参照**: [AP2の理解 #4](https://github.com/atakedemo/agent-commerce-research/issues/4)
-* **追補指示（コメント 1）**: [Issue #4 コメント](https://github.com/atakedemo/agent-commerce-research/issues/4#issuecomment-4230817462) にて、(1) 調査 Must に [Python サンプル](https://github.com/google-agentic-commerce/AP2/tree/main/samples/python) を含めること、(2) **データモデル**（Cart / Intent / Payment Mandate、`PaymentRequest`）の詳細化、(3) サンプルについて **リクエスト元・先・場面** と **コードブロック**での整理、(4) **IF** として A2A 拡張の組み込み（対象エンドポイント、リクエストボディ／パラメータ・記載例）が求められた。
-* **追補指示（コメント 2）**: [Issue #4 コメント](https://github.com/atakedemo/agent-commerce-research/issues/4#issuecomment-4230878507) にて、(1) **Mandate 3 点の電子署名・VC** を `#### データモデル` に追記、(2) **AgentCard の記載例**を「AP2 仕様がどこに組み込まれるか」に追記、(3) [AP2 リポジトリ](https://github.com/google-agentic-commerce/AP2) の **open Issue 一覧**を `insights/003-ap2-research/open-issues-filtered.md` に出力することが求められた。
-* **タイトル**: AP2の理解
-* **内容の要約**: データソースとして [google-agentic-commerce/AP2](https://github.com/google-agentic-commerce/AP2) を指定し、**(1) 対象ディレクトリの構造**、**(2) 規格で定めている内容（データモデル、IF 定義、認証認可）**、**(3) 個別調査トピック（サポートする決済手段、MCP サポートの状況）**、**(4) 検討状況（活発な Issue、最新リリースの範囲）** を整理することが求められている。
+* **参照**: [v0.2の内容確認 #11](https://github.com/atakedemo/agent-commerce-research/issues/11)
+* **タイトル**: v0.2 の内容確認
+* **内容の要約**: 2026-04-28 にリリースされた AP2 v0.2 の内容をまとめる。設計書（シーケンス図・状態遷移図・ER 図・API 一覧・MCP 一覧）の作成、v0.1 からの更新履歴の整理（`document_history.md`）、コントリビューター情報の記載（企業名含む）、`Report.md` の更新が求められた。
 
-## 調査対象ディレクトリ
+---
 
-* **パス**: `insights/003-ap2-research/`
-* **確認したファイル**: 本ディレクトリの `README.md`、および `README.md` の **Must / Should** に従い参照した `references/specification/community/AP2/` 配下の仕様・ドキュメント・型定義。追補に従い **`references/specification/community/AP2/samples/python/`**（Shopping / Merchant / Credentials Provider 各ロールのツール・A2A クライアント・サーバ起動）を追加確認した。GitHub 上の [AP2](https://github.com/google-agentic-commerce/AP2) については、リリース情報および **open Issue 一覧**（[`open-issues-filtered.md`](./open-issues-filtered.md) に整理）を参照した。
+## 設計書一覧
+
+| 設計書 | ファイル | 概要 |
+| --- | --- | --- |
+| シーケンス図 | [sequence_diagram.md](./sequence_diagram.md) | Human Present / Human Not Present の 2 フローを Mermaid で図示 |
+| 状態遷移図 | [state_transition.md](./state_transition.md) | Mandate（Checkout / Payment）の Open → Closed → Receipt ライフサイクル |
+| ER 図 | [er_diagram.md](./er_diagram.md) | Mandate・制約・Receipt・Merchant 間のデータモデルと関連 |
+| API 一覧 | [api_list.md](./api_list.md) | 各ロールが提供する MCP ツール・A2A インターフェイスの一覧 |
+| MCP 一覧 | [mcp_list.md](./mcp_list.md) | 5 種の MCP サーバと全ツールの引数・戻り値・概要 |
+
+更新履歴は [document_history.md](./document_history.md) を参照。
+
+---
 
 ## エグゼクティブサマリー
 
-AP2 は **Mandate と W3C Payment Request 由来オブジェクト**で決済意図を構造化し、**A2A の `Message` / `Artifact` の DataPart** に載せてエージェント間でやり取りする。**HTTP の「REST リソース一覧」より、AgentCard（well-known）＋ JSON-RPC 系トランスポート上の `send_message` と拡張ヘッダ**が実装上の接点になる。電子署名は **`CartMandate.merchant_authorization`（JWT）** と **`PaymentMandate.user_authorization`（SD-JWT VC 例示）** に集約されやすく、**IntentMandate 型（ミラー版）には署名フィールドが無い**。Python サンプルでは **Shopping → Merchant** に Mandate を載せたメッセージ送受信が実装されている。**MCP 向け標準バインディングは文書上ロードマップ**に留まりやすく、本サンプル主軸は A2A である。Target リポジトリの **open Issue** は [`open-issues-filtered.md`](./open-issues-filtered.md) に整理した。
+AP2 v0.2 は **Human Not Present（HNP）フローの提供**に重点を置いた第2リリース（2026-04-28）。v0.1 の 3 種 Mandate（IntentMandate / CartMandate / PaymentMandate）が **Checkout Mandate（Open/Closed）と Payment Mandate（Open/Closed）** の 4 状態モデルに再設計され、エージェントが制約の範囲内で自律的に購買・決済を完了できる仕組みが整備された。MCP サーバ実装が 5 種追加され、Merchant・CP・MPP すべてが MCP ツールとして呼び出せるようになった。ロールには **Trusted Surface（TS）** と **Merchant Payment Processor（MPP）** が新規追加された。
 
-## Issue要約
+---
 
-* **目的**: AP2 プロトコルについて、指定データソースに基づき論点を整理する。
-* **論点（Issue 本文より）**:
-  * 対象ディレクトリの構造
-  * 規格: データモデル、IF 定義、認証認可
-  * 個別: サポートする決済手段、MCP サポートの状況
-  * 検討状況: 議論が集中している Issue、最新リリースに含まれる内容
-* **追補（コメントより）**:
-  * `samples/python` を Must 参照に加える
-  * 上記 4 種データモデルの**フィールド単位の詳細**と、サンプルにおける **通信の端点・局面・コード例**
-  * IF は **A2A 拡張としての埋め込み**（エンドポイント、ボディ／パラメータ、サンプル記載）
-  * Mandate 3 点の**電子署名・SD-JWT VC**、**AgentCard 記載例**、**open Issue 一覧ファイル**（[`open-issues-filtered.md`](./open-issues-filtered.md)）
+## v0.2 の主要変更点サマリー
+
+### データモデルの再設計
+
+| v0.1 | v0.2 | 変更内容 |
+| --- | --- | --- |
+| `IntentMandate` | — | Open Checkout Mandate の制約フィールドに統合 |
+| `CartMandate` | `ClosedCheckoutMandate` | 名称変更・Open/Closed 分離 |
+| — | `OpenCheckoutMandate` | 新規追加。制約（allowed_merchants, line_items）を含む |
+| `PaymentMandate` | `ClosedPaymentMandate` | checkout_jwt_hash バインディングを明示 |
+| — | `OpenPaymentMandate` | 新規追加。8 種の制約タイプを含む |
+| `merchant_authorization` (JWT) | `CheckoutJWT` | Merchant 署名 JWT として独立 |
+| — | `CheckoutReceipt` / `PaymentReceipt` | レシート型を正式定義 |
+
+### ロールの追加
+
+| ロール | v0.1 | v0.2 |
+| --- | --- | --- |
+| Shopping Agent (SA) | ✅ | ✅（HNP 対応強化・agent_sk 署名追加） |
+| Credential Provider (CP) | ✅ | ✅（SD-JWT チェーン検証・制約評価を明示） |
+| Merchant (M) | ✅ | ✅ |
+| Merchant Payment Processor (MPP) | ❌ | ✅（新規追加） |
+| Trusted Surface (TS) | ❌ | ✅（新規追加・非エージェント UI） |
+
+### MCP サポート
+
+| MCP サーバ | v0.1 | v0.2 |
+| --- | --- | --- |
+| `merchant_agent_mcp` | ❌ | ✅（5 ツール） |
+| `credentials_provider_mcp` | ❌ | ✅（3 ツール） |
+| `merchant_payment_processor_mcp` | ❌ | ✅（1 ツール） |
+| `x402_credentials_provider_mcp` | ❌ | ✅（3 ツール） |
+| `x402_psp_mcp` | ❌ | ✅ |
+
+---
 
 ## 分析
 
-### 対象ディレクトリの構造
+### ディレクトリ構造（v0.2）
 
-リポジトリは **サンプル実装・型定義・MkDocs 仕様**の三層に分かれている。ルート `README.md` は **`samples`** を主要デモ領域とし、シナリオは `samples/python/scenarios` および `samples/android/scenarios` に配置されると明示している。中核のプロトコル記述は **`docs/`**（`specification.md`、`topics/`、`a2a-extension.md` 等）、機械可読な型は **`src/ap2/types/`** に集約されている。Python サンプルの実行エントリはシナリオ別 `run.sh` と、`samples/python/src/roles/` 配下の **ロール別エージェント＋`common/`（A2A サーバ・クライアント）** からなる。第2階層の概観は次のとおりである。
+v0.2 でリポジトリ構造が大幅に再編された。
 
 ```
 AP2/
-├── docs/                 # 仕様本文・トピック別解説・ロードマップ（MkDocs）
-├── src/ap2/types/        # Mandate・W3C Payment Request 由来オブジェクト等（Pydantic）
-├── samples/              # python / go / android の参照実装・シナリオ
-├── .github/              # CI、release-please 等
+├── docs/
+│   ├── ap2/                  # 仕様書群（specification / flows / mandates / security など）
+│   ├── faq.md
+│   ├── glossary.md
+│   ├── index.md
+│   └── overview.md
+├── code/
+│   ├── sdk/
+│   │   └── python/ap2/
+│   │       ├── models/       # Pydantic データモデル
+│   │       ├── schemas/      # JSON Schema
+│   │       ├── sdk/          # Mandate 検証・署名ユーティリティ
+│   │       └── tests/
+│   ├── samples/
+│   │   ├── python/           # Human Present / HNP シナリオ・ロール実装
+│   │   ├── go/
+│   │   ├── android/
+│   │   └── certs/
+│   └── web-client/           # Vite + React + TypeScript 製デモ UI
+├── scripts/
 └── README.md, CHANGELOG.md, mkdocs.yml, ...
 ```
 
-### 規格にて定めている内容
+**v0.1 から v0.2 への主なパス変更:**
 
-#### データモデル
+- `src/ap2/types/` → `code/sdk/python/ap2/models/`
+- `samples/python/` → `code/samples/python/`
+- `docs/specification.md`（単一） → `docs/ap2/`（複数ファイル分割）
 
-以下は **`src/ap2/types/mandate.py`** および **`src/ap2/types/payment_request.py`** における主フィールドと、**`docs/specification.md` Section 4–5** の意味づけの対応である（自然言語仕様と型は版により微妙差がありうるが、ミラー上はこう対応している）。
+### フロー（Human Present / Human Not Present）
 
-各項目では、説明のあとに **① ワイヤ上のデータ例（JSON または sd-jwt-vc 等のトークン列）** と **② リポジトリ内の実装サンプル（Python）** を対で示す。
+詳細なシーケンスは [`sequence_diagram.md`](./sequence_diagram.md) を参照。
 
-##### **1. Intent Mandate（`IntentMandate`）**
+#### Human Present（2 フェーズ）
 
-| フィールド（型） | 意味・役割 |
+1. **ショッピング**: SA が Open Mandate を提示しながら Merchant MCP で商品を探索・カートを構築し、Checkout JWT を取得
+2. **承認・決済**: Trusted Surface でユーザが Closed Mandate に署名 → CP から payment_token 取得 → Merchant → MPP に決済処理
+
+#### Human Not Present（3 フェーズ）
+
+1. **事前承認（HP）**: ユーザが制約付き Open Mandate を TS で事前に承認・署名
+2. **自律ショッピング（HNP）**: SA が制約を評価しながら Merchant MCP で自律的に商品を探索・カートを構築し、agent_sk で Closed Mandate に署名
+3. **自律決済（HNP）**: SA が CP → Merchant → MPP に順次 MCP ツールを呼び出し購買を完了
+
+### データモデル
+
+詳細なフィールド定義と関連は [`er_diagram.md`](./er_diagram.md) を参照。
+
+#### Checkout Mandate（Open/Closed）
+
+**定義箇所:**
+
+| 種別 | パス |
 | --- | --- |
-| `user_cart_confirmation_required` | 確定カート承認が必須か。未署名 Intent では `true` 必須等の制約が Docstring で述べられる。 |
-| `natural_language_description` | SA が生成しユーザが確認する自然文の購買意図。 |
-| `merchants` / `skus` | 許容マーチャント・SKU の限定（任意）。 |
-| `requires_refundability` | 返金必須フラグ。 |
-| `intent_expiry` | ISO 8601 形式の有効期限。 |
+| 仕様書 | `docs/ap2/checkout_mandate.md` |
+| Python 生成モデル（Open） | `code/sdk/python/ap2/sdk/generated/open_checkout_mandate.py` |
+| Python 生成モデル（Closed） | `code/sdk/python/ap2/sdk/generated/checkout_mandate.py` |
+| レシートモデル | `code/sdk/python/ap2/sdk/generated/checkout_receipt.py` |
 
-**Human-not-present** では同 Mandate がユーザ署名付きで決済の根拠になりうる、という位置づけが仕様書側で説明される。
-
-**① データ例（A2A `Message` の DataPart 内 JSON）** 
-
-出典: `docs/a2a-extension.md`（IntentMandate Message）
-* A2A ラッパの `messageId` / `contextId` / `parts` と、`data["ap2.mandates.IntentMandate"]` に入る
-* 仕様の JSON 例では `required_refundability` 表記。Pydantic 型は `requires_refundability`（`mandate.py`）であり、相互運用時はキー名の整合を要確認。
+**Open Checkout Mandate**（`vct=mandate.checkout.open.1`）: SA が生成。制約（`allowed_merchants`, `line_items`）と key binding（`cnf`）を含む。
 
 ```json
 {
-  "messageId": "e0b84c60-3f5f-4234-adc6-91f2b73b19e5",
-  "contextId": "sample-payment-context",
-  "taskId": "sample-payment-task",
-  "role": "user",
-  "parts": [
+  "vct": "mandate.checkout.open.1",
+  "constraints": [
     {
-      "kind": "data",
-      "data": {
-        "ap2.mandates.IntentMandate": {
-          "user_cart_confirmation_required": false,
-          "natural_language_description": "I'd like some cool red shoes in my size",
-          "merchants": null,
-          "skus": null,
-          "required_refundability": true,
-          "intent_expiry": "2025-09-16T15:00:00Z"
+      "type": "checkout.line_items",
+      "items": [
+        {
+          "id": "line_1",
+          "acceptable_items": [{ "id": "BAB1234", "title": "Red Style" }],
+          "quantity": 1
         }
-      }
-    }
-  ]
-}
-```
-
-**② 実装例（Python）** 
-
-* `IntentMandate` を組み立てて state に保持する（Shopper サブエージェント）。
-
-```python
-# references/specification/community/AP2/samples/python/src/roles/shopping_agent/subagents/shopper/tools.py
-intent_mandate = IntentMandate(
-    natural_language_description=natural_language_description,
-    user_cart_confirmation_required=user_cart_confirmation_required,
-    merchants=merchants,
-    skus=skus,
-    requires_refundability=requires_refundability,
-    intent_expiry=(
-        datetime.now(timezone.utc) + timedelta(days=1)
-    ).isoformat(),
-)
-tool_context.state["intent_mandate"] = intent_mandate
-```
-
-##### **2. Cart Mandate（`CartMandate`）**
-
-| フィールド（型） | 意味・役割 |
-| --- | --- |
-| `contents`（`CartContents`） | カート本体。 |
-| `merchant_authorization` | マーチャントがカート内容を束ねる **JWT**（`cart_hash`・短寿命 `exp` 等）の想定が Docstring で詳述される。 |
-
-* `CartContents` は **`id`**, **`user_cart_confirmation_required`**, **`payment_request`**（後述 `PaymentRequest`）, **`cart_expiry`**, **`merchant_name`** を持つ
-* 仕様上「価格に影響する情報が揃うまで CartMandate を出さない」旨が `docs/a2a-extension.md` に記載あり
-* 下記は文書例だが、Pydantic では `CartContents.user_cart_confirmation_required`、`CartMandate.merchant_authorization` 等の**フィールド名が一部異なる**（`docs/a2a-extension.md` 付近の例と `mandate.py` の対応表は IF 節の注意も参照）
-
-**① データ例（A2A `Artifact` の DataPart 内 JSON）** 
-
-出典: `docs/a2a-extension.md`（CartMandate Artifact）
-
-* `contents.payment_request` がネストした `PaymentRequest` に相当
-* 末尾の `risk_data` は実装定義のシグナル（JWT 風の文字列例）
-
-```json
-{
-  "name": "Fancy Cart Details",
-  "artifactId": "artifact_001",
-  "parts": [
-    {
-      "kind": "data",
-      "data": {
-        "ap2.mandates.CartMandate": {
-          "contents": {
-            "id": "cart_shoes_123",
-            "user_signature_required": false,
-            "payment_request": {
-              "method_data": [
-                {
-                  "supported_methods": "CARD",
-                  "data": {
-                    "payment_processor_url": "http://example.com/pay"
-                  }
-                }
-              ],
-              "details": {
-                "id": "order_shoes_123",
-                "displayItems": [
-                  {
-                    "label": "Cool Shoes Max",
-                    "amount": {
-                      "currency": "USD",
-                      "value": 120.0
-                    },
-                    "pending": null
-                  }
-                ],
-                "shipping_options": null,
-                "modifiers": null,
-                "total": {
-                  "label": "Total",
-                  "amount": {
-                    "currency": "USD",
-                    "value": 120.0
-                  },
-                  "pending": null
-                }
-              },
-              "options": {
-                "requestPayerName": false,
-                "requestPayerEmail": false,
-                "requestPayerPhone": false,
-                "requestShipping": true,
-                "shippingType": null
-              }
-            }
-          },
-          "merchant_signature": "sig_merchant_shoes_abc1",
-          "timestamp": "2025-08-26T19:36:36.377022Z"
-        }
-      }
+      ]
     },
     {
-      "kind": "data",
-      "data": {
-        "risk_data": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...fake_risk_data"
-      }
-    }
-  ]
-}
-```
-
-**② 実装例（Python）** 
-
-Merchant 側カタログサブエージェントが `CartContents` と `CartMandate` を生成し、Artifact の DataPart に `model_dump()` する。
-
-```python
-# references/specification/community/AP2/samples/python/src/roles/merchant_agent/sub_agents/catalog_agent.py（抜粋）
-payment_request = PaymentRequest(
-    method_data=method_data,
-    details=PaymentDetailsInit(
-        id=f"order_{item_count}",
-        display_items=[item],
-        total=PaymentItem(
-            label="Total",
-            amount=item.amount,
-        ),
-    ),
-    options=PaymentOptions(request_shipping=True),
-)
-cart_contents = CartContents(
-    id=f"cart_{item_count}",
-    user_cart_confirmation_required=True,
-    payment_request=payment_request,
-    cart_expiry=(current_time + timedelta(minutes=30)).isoformat(),
-    merchant_name="Generic Merchant",
-)
-cart_mandate = CartMandate(contents=cart_contents)
-await updater.add_artifact([
-    Part(
-        root=DataPart(data={CART_MANDATE_DATA_KEY: cart_mandate.model_dump()})
-    )
-])
-```
-
-##### **3. Payment Mandate（`PaymentMandate`）**
-
-| フィールド（型） | 意味・役割 |
-| --- | --- |
-| `payment_mandate_contents`（`PaymentMandateContents`） | 決済指示の実体。 |
-| `user_authorization` | ユーザ側の**検証可能提示**（例: sd-jwt-vc 想定の説明）で、`user_authorization` Docstring に列挙される。 |
-
-* `PaymentMandateContents` は **`payment_mandate_id`**, **`payment_details_id`**（`PaymentRequest.details.id` と対応）, **`payment_details_total`**（`PaymentItem`）, **`payment_response`**（ユーザが選択した方法と `details`）, **`merchant_agent`**, **`timestamp`** を持つ
-* 仕様は、ネットワーク（Visa, Mastercardなど）／イシュアへの**エージェント取引の可視化**を目的とする（`PaymentMandate` クラス Docstring、`docs/specification.md` Section 4.1.3）。
-
-**① データ例（A2A `Message` の DataPart 内 JSON ＋ sd-jwt-vc 想定のトークン列）** 
-
-出典: `docs/a2a-extension.md`（PaymentMandate Message）
-
-* `user_authorization` は **SD-JWT ベースの Verifiable Presentation** を想定した base64url 風のプレースホルダ（実装では issuer JWT・key-binding JWT・`transaction_data` 等を束ねる旨が `mandate.py` Docstring に記載）。
-
-```json
-{
-  "messageId": "b5951b1a-8d5b-4ad3-a06f-92bf74e76589",
-  "contextId": "sample-payment-context",
-  "taskId": "sample-payment-task",
-  "role": "user",
-  "parts": [
-    {
-      "kind": "data",
-      "data": {
-        "ap2.mandates.PaymentMandate": {
-          "payment_mandate_contents": {
-            "payment_mandate_id": "pm_12345",
-            "payment_details_id": "order_shoes_123",
-            "payment_details_total": {
-              "label": "Total",
-              "amount": {
-                "currency": "USD",
-                "value": 120.0
-              },
-              "pending": null,
-              "refund_period": 30
-            },
-            "payment_response": {
-              "request_id": "order_shoes_123",
-              "method_name": "CARD",
-              "details": {
-                "token": "xyz789"
-              },
-              "shipping_address": null,
-              "shipping_option": null,
-              "payer_name": null,
-              "payer_email": null,
-              "payer_phone": null
-            },
-            "merchant_agent": "MerchantAgent",
-            "timestamp": "2025-08-26T19:36:36.377022Z"
-          },
-          "user_authorization": "eyJhbGciOiJFUzI1NksiLCJraWQiOiJkaWQ6ZXhhbXBsZ..."
-        }
-      }
-    }
-  ]
-}
-```
-
-**② 実装例（Python）** 
-
-* Shopping Agent の `create_payment_mandate` で `PaymentMandate` を生成
-* 続く `sign_mandates_on_user_device` で `user_authorization` を代入する（サンプルはハッシュ連結のプレースホルダ。本番では sd-jwt-vc 等へ置換）
-
-```python
-# references/specification/community/AP2/samples/python/src/roles/shopping_agent/tools.py（抜粋）
-payment_response = PaymentResponse(
-    request_id=payment_request.details.id,
-    method_name=method_name,
-    details=details,
-    shipping_address=shipping_address,
-    payer_email=user_email,
-)
-payment_mandate = PaymentMandate(
-    payment_mandate_contents=PaymentMandateContents(
-        payment_mandate_id=uuid.uuid4().hex,
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        payment_details_id=payment_request.details.id,
-        payment_details_total=payment_request.details.total,
-        payment_response=payment_response,
-        merchant_agent=cart_mandate.contents.merchant_name,
-    ),
-)
-# sign_mandates_on_user_device（別関数）で user_authorization を付与
-payment_mandate.user_authorization = cart_mandate_hash + "_" + payment_mandate_hash
-```
-
-##### **4. Payment Request（`PaymentRequest`）**
-
-W3C Payment Request API の Python モデル化。
-* **`method_data`**（`PaymentMethodData` の列：`supported_methods` とメソッド固有情報 `data`
-* **`details`**（`PaymentDetailsInit`：`id`, `display_items`, `shipping_options`, `modifiers`, `total` 等）
-* **`options`**（支払人情報・配送要求フラグ） *任意
-* **`shipping_address`**（`ContactAddress`） *任意
-
-**① データ例（JSON — `CartMandate.contents.payment_request` にネストされる形の抜粋）
-
-出典: `docs/a2a-extension.md` の Cart 例から `payment_request` オブジェクトのみ
-
-* W3C 側の慣例で `displayItems` / `requestPayerName` 等が **camelCase** になる場合がある（Python モデルは snake_case）。
-
-```json
-{
-  "method_data": [
-    {
-      "supported_methods": "CARD",
-      "data": {
-        "payment_processor_url": "http://example.com/pay"
-      }
+      "type": "checkout.allowed_merchants",
+      "allowed": [{ "id": "merchant_1", "name": "Demo Merchant" }]
     }
   ],
-  "details": {
-    "id": "order_shoes_123",
-    "displayItems": [
-      {
-        "label": "Cool Shoes Max",
-        "amount": {
-          "currency": "USD",
-          "value": 120.0
-        },
-        "pending": null
-      }
-    ],
-    "shipping_options": null,
-    "modifiers": null,
-    "total": {
-      "label": "Total",
-      "amount": {
-        "currency": "USD",
-        "value": 120.0
-      },
-      "pending": null
-    }
+  "cnf": {
+    "jwk": { "crv": "P-256", "kty": "EC",
+             "x": "QpSyxPQHy38xckypDr54gZ3T42zj9iLtV4koyb5U27c",
+             "y": "37HLd7JJinxjJIn8J7HijssoeclbfhdW-gUL7feI9lw" }
   },
-  "options": {
-    "requestPayerName": false,
-    "requestPayerEmail": false,
-    "requestPayerPhone": false,
-    "requestShipping": true,
-    "shippingType": null
+  "iat": 1777342357,
+  "exp": 1777345957
+}
+```
+
+**Closed Checkout Mandate**（`vct=mandate.checkout.1`）: Merchant が Checkout JWT を発行後、SA が `checkout_jwt_hash` でバインド。SD-JWT 形式。
+
+```json
+{
+  "vct": "mandate.checkout.1",
+  "checkout_hash": "NivWhuqfzcvZNapvIEJ2-3tsdQLkiuIcye2g46WVgX8",
+  "aud": "merchant",
+  "nonce": "b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4",
+  "iat": 1777342376
+}
+```
+
+---
+
+#### Payment Mandate（Open/Closed）
+
+**定義箇所:**
+
+| 種別 | パス |
+| --- | --- |
+| 仕様書 | `docs/ap2/payment_mandate.md` |
+| Python 生成モデル（Open） | `code/sdk/python/ap2/sdk/generated/open_payment_mandate.py` |
+| Python 生成モデル（Closed） | `code/sdk/python/ap2/sdk/generated/payment_mandate.py` |
+| レシートモデル | `code/sdk/python/ap2/sdk/generated/payment_receipt.py` |
+
+**Open Payment Mandate**（`vct=mandate.payment.open.1`）: SA が生成。8 種の制約（amount_range, budget, recurrence, allowed_payees 等）と key binding を含む。
+
+```json
+{
+  "vct": "mandate.payment.open.1",
+  "constraints": [
+    {
+      "type": "payment.amount_range",
+      "currency": "USD",
+      "max": 20000,
+      "min": 0
+    },
+    {
+      "type": "payment.allowed_payees",
+      "allowed": [
+        {
+          "id": "merchant_1",
+          "name": "Demo Merchant",
+          "website": "https://demo-merchant.example"
+        }
+      ]
+    },
+    {
+      "type": "payment.reference",
+      "conditional_transaction_id": "FzLoxbbtgQGYZxoSM2NJYJtkFTSsdfUBoVEQ12k7JN8"
+    }
+  ],
+  "cnf": {
+    "jwk": { "crv": "P-256", "kty": "EC",
+             "x": "QpSyxPQHy38xckypDr54gZ3T42zj9iLtV4koyb5U27c",
+             "y": "37HLd7JJinxjJIn8J7HijssoeclbfhdW-gUL7feI9lw" }
+  },
+  "iat": 1777342357,
+  "exp": 1777345957
+}
+```
+
+**Closed Payment Mandate**（`vct=mandate.payment.1`）: `checkout_jwt_hash` でバインドしたトランザクション固有 Mandate。`payee`, `payment_amount`, `payment_instrument` を含む。
+
+```json
+{
+  "vct": "mandate.payment.1",
+  "transaction_id": "NivWhuqfzcvZNapvIEJ2-3tsdQLkiuIcye2g46WVgX8",
+  "payee": {
+    "id": "merchant_1",
+    "name": "Demo Merchant",
+    "website": "https://demo-merchant.example"
+  },
+  "payment_amount": {
+    "amount": 19900,
+    "currency": "USD"
+  },
+  "payment_instrument": {
+    "id": "stub",
+    "type": "card",
+    "description": "Card ••••4242"
   }
 }
 ```
 
-**② 実装例（Python）** 
+**制約の追加例（Payment）:**
 
-* 上記 **2.** の `catalog_agent.py` と同様に `PaymentRequest` を構築するほか、型定義は `payment_request.py` に集約される。
-
-```python
-# references/specification/community/AP2/samples/python/src/roles/merchant_agent/sub_agents/catalog_agent.py（抜粋・CARD 分岐）
-method_data = [
-    PaymentMethodData(
-        supported_methods="CARD",
-        data={
-            "network": ["mastercard", "paypal", "amex"],
-        },
-    )
-]
-payment_request = PaymentRequest(
-    method_data=method_data,
-    details=PaymentDetailsInit(
-        id=f"order_{item_count}",
-        display_items=[item],
-        total=PaymentItem(
-            label="Total",
-            amount=item.amount,
-        ),
-    ),
-    options=PaymentOptions(request_shipping=True),
-)
+```json
+{ "type": "payment.agent_recurrence", "frequency": "MONTHLY", "max_occurrences": 12 }
+{ "type": "payment.budget", "max": 1000.00, "currency": "USD" }
+{ "type": "payment.execution_date", "not_before": "2026-03-31T00:00:00Z", "not_after": "2026-04-30T23:59:59Z" }
 ```
 
-##### 電子署名および VC（Mandate 3 点）
+---
 
-**参照したファイル**
-* `references/specification/community/AP2/src/ap2/types/mandate.py`
-* `docs/specification.md` Section 4.1 
+#### Mandate チェーンの連結
 
-**整理の観点**
-* **誰の秘密鍵で何に署名するか**
-* **どのフィールドに署名値が入るか**
-* **SD-JWT VC 形式が例示されるのはどれか**
- 
-仕様本文と型・サンプル実装の間に**解釈の差**がある場合は明示する（関連: [Issue #150](https://github.com/google-agentic-commerce/AP2/issues/150) 等）。
+`checkout_jwt_hash`（`Base64url(SHA-256(checkout_jwt))`）を共有キーとして Checkout Mandate と Payment Mandate が暗号的に連結される。これにより非否認性と二重使用防止を実現する。
 
-| Mandate | 秘密鍵の主体（仕様・型の要点） | 署名・トークンが載るフィールド | SD-JWT VC |
-| --- | --- | --- | --- |
-| **Cart Mandate** | `merchant_authorization` にて、 **マーチャントの秘密鍵**による **JWT**（`CartContents` の `cart_hash` 等を含むペイロード）を想定。 | **`merchant_authorization`**（任意。base64url **JWT**） | **必須ではない**。Docstring は **JWT** と明記。 |
-| **Intent Mandate** | ユーザがハードウェアで保管する秘密鍵で署名。 | **（ミラー版では該当フィールドなし）**<br>（Docstring は HNP 向けフィールド追加予定を示唆）。 | **型レベルでは未指定**（別途匿名 VDC 等の提案 Issue あり） |
-| **Payment Mandate** | **ユーザ側**の提示: イシュア JWT・キーバインディング等（`user_authorization` Docstring）。 | **`user_authorization`**（任意。base64url **Verifiable Presentation**） | **例示あり**。`mandate.py` は *"For example an sd-jwt-vc would contain"* と **SD-JWT VC** 構造（issuer-signed JWT、`transaction_data` に Cart / Payment コンテンツのハッシュ等）を説明。 |
+### API / MCP インターフェイス
 
-**補足**: `docs/a2a-extension.md` の JSON 例では `CartMandate` に **`merchant_signature`** という別名が出る箇所があり、Pydantic の **`merchant_authorization`** とは**キー名が一致しない**。
+詳細は [`api_list.md`](./api_list.md) および [`mcp_list.md`](./mcp_list.md) を参照。
 
-##### サンプルにおけるエンドツーエンド利用（場面の対応表）
+AP2 v0.2 の主要インターフェイスは REST ではなく **MCP ツール**として実装されている。サンプルは各ロールの `*_agent`（A2A）版と `*_mcp`（MCP）版を並行提供する。
 
-| 場面 | リクエスト元 | リクエスト先 | 主に関わるモデル |
-| --- | --- | --- | --- |
-| A — 商品探索 | Shopping Agent<br>（Shopper サブエージェント） | Merchant Agent | `IntentMandate` を Message に載せる → `CartMandate` Artifact |
-| B — カート更新（配送先） | Shopping Agent | Merchant Agent | 既存 `CartMandate` の更新 |
-| C — 決済マンデート組立 | Shopping Agent<br>（ツール） | —（同一プロセス内で生成。CP への送信は別ツール） | `PaymentRequest` / `PaymentResponse` → `PaymentMandate` |
-| D — 決済開始 | Shopping Agent | Merchant Agent | 署名済み `PaymentMandate` を Message に載せる |
+#### MCP ツール数サマリー
 
-場面 A・D の A2A 送信は、それぞれ **`find_products`（`shopper/tools.py`）** と **`initiate_payment`（`shopping_agent/tools.py`）** が `merchant_agent_client.send_a2a_message` を呼ぶ形で実装されている。
-
-DataPart キー定数は `CART_MANDATE_DATA_KEY` = `"ap2.mandates.CartMandate"`、`INTENT_MANDATE_DATA_KEY`、`PAYMENT_MANDATE_DATA_KEY` が `mandate.py` で定義され、`docs/a2a-extension.md` の JSON 例と一致する。
-
-#### IF 定義
-
-**AP2 が組み込まれるプロトコルの前提は、A2A**である。REST のパスディスパッチではなく、次の**レイヤ**で IF が決まる。
-
-**対象 URL・エンドポイント（A2A 実装の接点）**
-
-1. **Agent Card（メタデータ）**  
-   クライアントはベース URL に対し **A2A SDK が決める well-known パス**（`a2a.utils.constants.AGENT_CARD_WELL_KNOWN_PATH`）で `AgentCard` を取得する（`samples/python/src/common/payment_remote_a2a_client.py`）。サンプルの `agent.json` 例では **`url`** に JSON-RPC のエージェント RPC 基底（例: `http://localhost:8001/a2a/merchant_agent`）、**`preferredTransport`**: `"JSONRPC"` が宣言される（`samples/python/src/roles/merchant_agent/agent.json`）。
-
-2. **JSON-RPC（メッセージ送受信）**  
-   `A2AStarletteApplication` 等により **指定 `rpc_url`** に JSON-RPC ハンドラが載る（`samples/python/src/common/server.py`）。**クライアント**は `Client.send_message(message)` で **A2A `Message`** を送り、**`Task`**（`context_id`, `artifacts` 等）を受け取る。
-
-3. **拡張交渉**  
-   `AgentCard.capabilities.extensions` に **AP2 の拡張 URI**（サンプルでは `https://github.com/google-agentic-commerce/ap2/v1`）や決済手段拡張 URI が載る。クライアントは **`HTTP_EXTENSION_HEADER`**（`a2a.extensions.common`）に必要拡張を列挙してクライアントを生成する（`PaymentRemoteA2aClient`）。
-
-**AP2 仕様が「どこに」組み込まれるか**
-
-| 埋め込み先（A2A 構造） | AP2 の入り方 |
+| MCP サーバ | ツール数 |
 | --- | --- |
-| `AgentCard.capabilities.extensions[]` | `uri`・`params.roles`（`docs/a2a-extension.md` の JSON Schema）で AP2 対応とロールを宣言。 |
-| `Message.parts[]`（`kind: data`） | `data["ap2.mandates.IntentMandate"]` または `data["ap2.mandates.PaymentMandate"]` 等。任意で `risk_data`。 |
-| `Artifact.parts[]`（`kind: data`） | `data["ap2.mandates.CartMandate"]` とオプションの `risk_data`。 |
+| Merchant Agent | 5 |
+| Credential Provider | 3 |
+| Merchant Payment Processor | 1 |
+| x402 Credential Provider | 3 |
+| x402 PSP | 詳細未確認 |
 
-**AgentCard の記載例（AP2 利用時）**
+### 認証認可
 
-* **仕様ドキュメント上の例**（`docs/a2a-extension.md`）— 拡張 URI と `params.roles` の最小例。`uri` は文書上 `https://github.com/google-agentic-commerce/ap2/tree/v0.1`。
+* **エージェント認可モデル**: ユーザが TS で Open Mandate に署名（委譲）→ 検証者がエージェントに Mandate 提示を要求（アクション認可）の 2 段階
+* **2 つの委譲モデル**:
+  1. **User Credential**: VDC 発行者が TS を通じてユーザ同意を確保。OpenID4VP で委譲
+  2. **Trusted Agent Provider**: エージェント提供者が安全に保管した署名鍵で Mandate を作成
+* **鍵管理**: `user_sk`（TS が管理、ユーザが生体認証で保護）、`agent_sk`（HNP で Closed Mandate に署名）
+* **セキュリティ考慮点**（`docs/ap2/security_and_privacy_considerations.md`より）:
+  - Checkout 操作の防止: Payment Mandate に関連 Checkout への参照を必須化
+  - 二重使用防止: Action Receipt 受領まで新規 Mandate 作成禁止
+  - 支払い認証情報の盗難: 単回用途トークン・決済完了後のみ発行
 
-```json
-{
-  "name": "Travel Agent",
-  "description": "This agent can book all necessary parts of a vacation",
-  "capabilities": {
-    "extensions": [
-      {
-        "uri": "https://github.com/google-agentic-commerce/ap2/tree/v0.1",
-        "description": "This agent can pay for reservations on the user's behalf",
-        "params": {
-          "roles": ["shopper"]
-        }
-      }
-    ]
-  },
-  "skills": []
-}
-```
+### サポートする決済手段
 
-* **Python サンプル（Merchant Agent）**（`samples/python/src/roles/merchant_agent/agent.json`）— 実際のデモでは **`url`**（JSON-RPC 基底）、**`preferredTransport`**、**拡張 URI**（`https://github.com/google-agentic-commerce/ap2/v1`）および **決済手段拡張**を併記。
+| 決済手段 | v0.1 | v0.2 |
+| --- | --- | --- |
+| カード（ES256 署名） | ✅ | ✅（整備） |
+| x402（USDC / EIP-3009） | ✅（サンプルのみ） | ✅（専用 MCP 追加） |
+| e-ウォレット・銀行振込 | ロードマップ | ロードマップ継続 |
+| ステーブルコイン | ロードマップ | ロードマップ継続 |
 
-```json
-{
-  "name": "MerchantAgent",
-  "description": "A sales assistant agent for a merchant.",
-  "url": "http://localhost:8001/a2a/merchant_agent",
-  "preferredTransport": "JSONRPC",
-  "protocolVersion": "0.3.0",
-  "version": "1.0.0",
-  "defaultInputModes": ["json"],
-  "defaultOutputModes": ["json"],
-  "capabilities": {
-      "extensions": [
-        {
-          "uri": "https://github.com/google-agentic-commerce/ap2/v1",
-          "description": "Supports the Agent Payments Protocol.",
-          "required": true
-        },
-        {
-          "uri": "https://sample-card-network.github.io/paymentmethod/types/v1",
-          "description": "Supports the Sample Card Network payment method extension",
-          "required": true
-        }
-      ]
-  },
-    "skills": [
-    {
-      "id": "search_catalog",
-      "name": "Search Catalog",
-      "description": "Searches the merchant's catalog based on a shopping intent & returns a cart containing the top results.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "shopping_intent": {
-            "type": "string",
-            "description": "A JSON string representing the user's shopping intent."
-          }
-        },
-        "required": ["shopping_intent"]
-      },
-      "tags": ["merchant", "search", "catalog"]
-    }
-  ]
-}
-```
+### MCP の開発状況
 
-**ドキュメント上の JSON 記載例**は `docs/a2a-extension.md` の Intent / Cart Artifact / PaymentMandate Message の各ブロックがそのまま「パラメータ記載例」になる。サンプルコード側は上表のとおり **`A2aMessageBuilder` が同等の `add_data(キー, dict|Pydantic model)`** を積み上げている。
+> "We are working on an SDK and a MCP server right now, in collaboration with payment service providers."（`docs/faq.md` Q5）
 
-**注意**: `docs/a2a-extension.md` の拡張 URI は `https://github.com/google-agentic-commerce/ap2/tree/v0.1` 表記であり、`agent.json` サンプルの `https://github.com/google-agentic-commerce/ap2/v1` とは**文字列が一致しない**。相互運用時は**実際に参照する拡張 URI の一本化**が未解決になりうる（下文「未解決事項」参照）。
+v0.2 でサンプル実装 5 種が提供されたが、**FIDO Alliance での標準化は進行中**。FAQ では支払いサービスプロバイダとの協業が明記されている。
 
-#### 認証認可
+---
 
-「認証認可」は **OAuth 一発の API 仕様**という形ではなく、次の積み上げとして記述される。
+## コントリビューター情報（v0.2）
 
-* **Mandate の暗号署名**（ユーザ・マーチャント等の非改ざん性）
-* **ロール分離**（ショッピング経路と PCI/PII を扱う CP の分離）（`docs/topics/privacy-and-security.md`）
-* **短期の信頼**としての **手動キュレーションされたレジストリ／許可リスト**（`docs/specification.md` Section 3.2.1）
-* **長期**として **HTTPS、DNS、mTLS、API キー交換**等への期待（Section 3.2.2）
-* **ステップアップチャレンジ**（3DS2、OTP 等）と **v0.1 でのリダイレクトチャレンジ**（Section 5.5）
+### v0.2 リリース関連 PR 担当者
 
-サンプルの `sign_mandates_on_user_device` は**実署名のプレースホルダ**（ハッシュ連結）であり、本番では硬い鍵操作・VC に置き換える前提が Docstring で明示される。
+| 氏名（GitHub） | 企業 | v0.2 での役割 | 関連 PR |
+| --- | --- | --- | --- |
+| yanheChen | Google（google-agentic-commerce org） | v0.2 実装作成・リリース PR 作成者 | [#233](https://github.com/google-agentic-commerce/AP2/pull/233), [#238](https://github.com/google-agentic-commerce/AP2/pull/238), [#246](https://github.com/google-agentic-commerce/AP2/pull/246) |
+| GarethCOliver | Google（OpenID / FIDO 関連担当） | v0.2 リリースレビュー・担当者・貢献ガイドライン更新 | [#233](https://github.com/google-agentic-commerce/AP2/pull/233)（Reviewer）, [#240](https://github.com/google-agentic-commerce/AP2/pull/240) |
+| kmcduffie（Kelly Seidl） | Google（Software Engineer & Payments Enthusiast） | CHANGELOG 更新 | [#239](https://github.com/google-agentic-commerce/AP2/pull/239) |
 
-### 個別調査トピック
+### その他主要コントリビューター（全体）
 
-#### サポートする決済手段
+| GitHub ユーザー名 | 企業 | 主な貢献 |
+| --- | --- | --- |
+| joshlund-goog | Google | 初期仕様策定 |
+| mdoeseckle | Google | 初期実装 |
+| baembry-goog | Google | 初期実装 |
+| holtskinner | Google | ドキュメント |
+| stefanoamorelli | — | Go サンプル実装（PR #101） |
+| zeroasterisk | — | コラボレーター |
+| jorellis, abhinavrau, francescomiliani, vikkite, meetrick | — | 各種コントリビューター |
 
-* **公式ロードマップ / v0.1**: **プル型（クレジット／デビット等）**が明示されている（`docs/specification.md` 冒頭ロードマップ、`docs/roadmap.md`）。
-* **将来**: プッシュ型（口座振替、ウォレット等）、Human-not-present の拡張（同ロードマップ）。
-* **x402 / 暗号資産**: `docs/topics/ap2-and-x402.md` で **x402 との補完**と **[a2a-x402](https://github.com/google-agentic-commerce/a2a-x402/) リポジトリとの整合予定**が述べられている。サンプルに **human-present の x402 シナリオ**（`samples/python/scenarios/a2a/human-present/x402/`）がある。`create_payment_mandate` は環境変数 `PAYMENT_METHOD=x402` のとき `method_name = "https://www.x402.org/"` とする分岐を含む。
-* **話題としての stablecoin**: ドキュメントに stablecoin payments のトピック追加が進んでいる旨が、GitHub 上の直近の `docs:` 系コミット／Issue と整合する（詳細はリポジトリの `docs/topics/` を追う必要あり）。
-
-#### MCP サポートの状況
-
-* **文書上の位置づけ**: `docs/topics/ap2-a2a-and-mcp.md` は **MCP 用サーバを開発中**と明記する。`docs/roadmap.md` では **「AP2 MCP server v0.1」が未チェック**であり、**A2A 拡張 v0.1 や各 SDK も同様に未完了**として列挙されている。
-* **解釈**: MCP は **トランスポート／ツール統合の重要層**として扱われるが、**v0.1 リリースタグと同時に完了した標準成果物**というより **ロードマップ上の次のマイルストーン**に近い。Python サンプルの **Must 参照は A2A 中心**であり、MCP 固有のツール定義はこのレイヤでは不足しがちである。
-
-### 検討状況（Issue とリリース）
-
-* **GitHub Releases**: 公開 API 上、**[v0.1.0（2025-09-16）](https://github.com/google-agentic-commerce/AP2/releases/tag/v0.1.0)** が最新。**本文は「Create Agent Payments Protocol (AP2)」**を主機能として挙げている。
-* **CHANGELOG**: `CHANGELOG.md` も **0.1.0 のみ**で、内容は上記と一致する。
-* **open Issue 一覧**: 本リポジトリ調査用に **[`open-issues-filtered.md`](./open-issues-filtered.md)** に **40 件**（PR 除外、2026-04-12 UTC 時点）を列挙。
-  * 仕様と実装の整合（[Issue #150](https://github.com/google-agentic-commerce/AP2/issues/150)）
-  * Human-present の承認チェーン（[#215](https://github.com/google-agentic-commerce/AP2/issues/215)）
-  * AP2/A2A 境界のチャレンジ（[#214](https://github.com/google-agentic-commerce/AP2/issues/214)）
-  * MCP 連携（[#178](https://github.com/google-agentic-commerce/AP2/issues/178)） など
+---
 
 ## 未解決事項・不足情報
 
-* **MCP**: 「MCP server v0.1」の**具体的なツール一覧・スキーマ・リリース時期**は、ロードマップとトピック文面以外の**確定ドキュメント**を本調査では深掘りしていない。
-* **A2A 拡張 URI の表記ゆれ**: `docs/a2a-extension.md` とサンプル `agent.json` で **拡張 `uri` 文字列が一致しない**。運用上どちらを正とするか、あるいはバージョン管理方針の確認が必要。
-* **認証認可の細目**: mTLS やレジストリの**運用プロファイル**は長期ビジョン寄りで、**相互運用テストに落ちた規範**としては不足しうる。
-* **ワークスペースミラーと GitHub の完全一致**: `references/specification/community/AP2` は**特定時点のスナップショット**であり、**本日時点の `main` との差分**は自動では検証していない。
-* **決済手段の網羅表**: カード＋x402 サンプル＋ stablecoin トピック等は確認できるが、**対応表を1枚にした公式マトリクス**は未確認である。
-* **Cart／Intent の署名責務**: 仕様本文の「ユーザ署名」と型定義の **`merchant_authorization`（マーチャント JWT）** の関係は、[Issue #150](https://github.com/google-agentic-commerce/AP2/issues/150) 等で議論中であり、本レポートの表は**ミラー版の型**を優先して記載している。
+* **x402_psp_mcp のツール詳細**: `code/samples/python/src/roles/x402_psp_mcp/server.py` の具体的なツール定義を未確認。
+* **shopping_agent_v2 の実装差異**: `shopping_agent_v2` と `shopping_agent` の具体的な変更点が未確認。
+* **A2A 版ロールの変更内容**: `*_agent` 版（A2A 実装）が v0.1 からどう変わったか未詳細。
+* **SDK API の詳細**: `code/sdk/python/ap2/sdk/README.md` の内容（Mandate 検証・署名の具体的な API）を未確認。
+* **FIDO 標準化の進捗**: FAQ で言及されている FIDO Alliance での標準化スケジュールは未確認。
+* **Go / Android サンプルの v0.2 対応状況**: Python サンプルは確認済みだが、Go・Android の更新内容は未確認。
 
-## 次のアクション
+---
 
-* **ローカルミラーを更新**する場合は、`references/specification/community/AP2` を upstream の `main`（または調査対象タグ）に合わせて再取得し、本レポートの該当章を差し替える。
-* **拡張 URI の整合**: `docs/a2a-extension.md`・各 `agent.json`・リリースタグの**同一バージョンの URI**を突き合わせ、実装と仕様の差分 Issue の有無を確認する。
-* **MCP 追跡**: `docs/roadmap.md` のチェックボックスと、リポジトリ内で `mcp` を検索した結果（新規 `servers/` 等の追加）を定期確認する。
-* **決済手段**: `docs/topics/ap2-and-x402.md` と `a2a-x402` リポジトリの**リリース対応表**を横断し、AP2 型定義との対応を表形式で整理する。
-* **議論の追従**: [AP2 Issues](https://github.com/google-agentic-commerce/AP2/issues) で **Documentation** ラベルや「underdefined」を含む項目をフィルし、仕様書の次版で解消されたかを確認する。
+## 参照ファイル・URL
 
-## 参照ファイル
+### GitHub（v0.2 / main ブランチ）
 
-* `insights/003-ap2-research/README.md`
-* `references/specification/community/AP2/README.md`
-* `references/specification/community/AP2/docs/specification.md`
-* `references/specification/community/AP2/docs/a2a-extension.md`
-* `references/specification/community/AP2/docs/topics/ap2-a2a-and-mcp.md`
-* `references/specification/community/AP2/docs/topics/ap2-and-x402.md`
-* `references/specification/community/AP2/docs/topics/privacy-and-security.md`
-* `references/specification/community/AP2/docs/roadmap.md`
-* `references/specification/community/AP2/src/ap2/types/mandate.py`
-* `references/specification/community/AP2/src/ap2/types/payment_request.py`
-* `references/specification/community/AP2/samples/python/src/roles/shopping_agent/tools.py`
-* `references/specification/community/AP2/samples/python/src/roles/shopping_agent/subagents/shopper/tools.py`
-* `references/specification/community/AP2/samples/python/src/roles/merchant_agent/sub_agents/catalog_agent.py`
-* `references/specification/community/AP2/samples/python/src/common/payment_remote_a2a_client.py`
-* `references/specification/community/AP2/samples/python/src/common/server.py`
-* `references/specification/community/AP2/samples/python/src/roles/merchant_agent/agent.json`
-* `references/specification/community/AP2/CHANGELOG.md`
-* [`insights/003-ap2-research/open-issues-filtered.md`](./open-issues-filtered.md)
+* `docs/overview.md`
+* `docs/ap2/specification.md`
+* `docs/ap2/flows.md`
+* `docs/ap2/checkout_mandate.md`
+* `docs/ap2/payment_mandate.md`
+* `docs/ap2/agent_authorization.md`
+* `docs/ap2/implementation_considerations.md`
+* `docs/ap2/security_and_privacy_considerations.md`
+* `docs/glossary.md`
+* `docs/faq.md`
+* `docs/index.md`
+* `code/samples/python/src/roles/merchant_agent_mcp/server.py`
+* `code/samples/python/src/roles/credentials_provider_mcp/server.py`
+* `code/samples/python/src/roles/merchant_payment_processor_mcp/server.py`
+* `code/samples/python/src/roles/x402_credentials_provider_mcp/server.py`
+* [PR #233](https://github.com/google-agentic-commerce/AP2/pull/233)（Release AP2 v0.2）
+* [Releases](https://github.com/google-agentic-commerce/AP2/releases)
 
-## 主要ファクト
+### 本ディレクトリ
 
-* **ディレクトリ**: `docs/` が仕様・MkDocs、`src/ap2/types/` が Mandate / Payment Request 系データモデル、`samples/python/src/` が A2A 連携の参照実装（ルート `README.md`＋コメント Must）。
-* **データモデル**: `IntentMandate`、`CartMandate`（＋`CartContents`）、`PaymentMandate`（＋`PaymentMandateContents`）、`PaymentRequest` 樹形が `mandate.py` / `payment_request.py` と `docs/specification.md` で対応づく。
-* **電子署名・VC**: `CartMandate.merchant_authorization`（JWT／マーチャント鍵）、`PaymentMandate.user_authorization`（**SD-JWT VC** 例示）、`IntentMandate` はミラー版に署名フィールドなし—仕様本文（ユーザ署名）との差に注意。
-* **AgentCard**: `capabilities.extensions[]` に AP2 の `uri` と `params.roles` を載せる。文書例（`ap2/tree/v0.1`）とサンプル `agent.json`（`ap2/v1`）で **URI 文字列が異なる**。
-* **open Issue**: [`open-issues-filtered.md`](./open-issues-filtered.md) に **40** 件（2026-04-12 UTC、PR 除外）。
-* **IF**: A2A の **AgentCard（well-known）**、**JSON-RPC メッセージ送受信**、**Message / Artifact の DataPart** に `ap2.mandates.*` キーで AP2 を埋め込む。拡張 URI は AgentCard と `HTTP_EXTENSION_HEADER` で運用。
-* **Python サンプル**: Shopping → Merchant に `INTENT_MANDATE_DATA_KEY` や `PAYMENT_MANDATE_DATA_KEY` を載せた `Message` を送り、`CartMandate` は Merchant 側 **Artifact** として返るフローが `shopper/tools.py` / `shopping_agent/tools.py` にある。
-* **認証認可**: Mandate 署名、ロール分離、許可リスト、将来の mTLS/DNS 等、および 3DS2 等のチャレンジ（`docs/specification.md` Section 3.2, 5.5、`docs/topics/privacy-and-security.md`）。サンプルのデバイス署名はプレースホルダ。
-* **状態・ライフサイクル**: Human-present / not-present の違い、Intent の TTL・カート有効期限、チャレンジ時のユーザーオブザーバビリティ（`docs/specification.md` Section 5）。サンプルでは `task.context_id` をショッピング文脈に保存。
-* **決済手段**: v0.1 はプル型カード中心；x402 は補完関係・別実装リポジトリと明示（`docs/topics/ap2-and-x402.md`）；`create_payment_mandate` が `CARD` / x402 URL を切替。
-* **MCP**: トピック文面とロードマップに **AP2 MCP server v0.1（未チェック）**；Python Must サンプルは A2A 主軸。
-* **リリース**: GitHub 上 **v0.1.0（2025-09-16）** が最新リリース、`CHANGELOG.md` も同内容。
+* [sequence_diagram.md](./sequence_diagram.md)
+* [state_transition.md](./state_transition.md)
+* [er_diagram.md](./er_diagram.md)
+* [api_list.md](./api_list.md)
+* [mcp_list.md](./mcp_list.md)
+* [document_history.md](./document_history.md)
+* [open-issues-filtered.md](./open-issues-filtered.md)
+
+---
+
+## 主要ファクト（v0.2）
+
+* **リリース日**: 2026-04-28（v0.2.0、リリース者: GarethCOliver）
+* **フォーカス**: Human Not Present（HNP）フローの提供
+* **Mandate モデル**: Open/Closed × Checkout/Payment の 4 状態に再設計
+* **制約システム**: Checkout 2 種・Payment 8 種の制約タイプを正式定義
+* **新規ロール**: Trusted Surface（TS）・Merchant Payment Processor（MPP）
+* **MCP**: 5 種の MCP サーバ実装を追加（merchant, CP, MPP, x402 CP, x402 PSP）
+* **署名**: user_sk（HP）・agent_sk（HNP）の 2 鍵モデル、ES256 / EIP-3009 対応
+* **ディレクトリ**: `src/` → `code/`、`docs/specification.md` → `docs/ap2/` に再編
+* **テクノロジー**: Agent Development Kit（ADK）+ Gemini 3.1 Flash Lite Preview を使用（非必須）
+* **標準化**: FIDO Alliance で標準化進行中（FAQ より）
