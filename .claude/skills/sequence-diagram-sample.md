@@ -1,28 +1,46 @@
 ---
 name: sequence-diagram-sample
-description: Generate sequence diagrams for a user-specified directory under `samples/`. Use when the user asks for Mermaid sequence diagrams, request flow diagrams, interaction flow documentation, or runtime behavior summaries for a sample implementation.
+description: Generate sequence diagrams for a user-specified directory under `samples/` or a public GitHub repository. Use when the user asks for Mermaid sequence diagrams, request flow diagrams, interaction flow documentation, or runtime behavior summaries for a sample implementation or a public repository.
 allowed-tools:
   - Bash
   - Read
   - Write
+  - mcp__deepwiki__ask_question
+  - mcp__deepwiki__read_wiki_structure
+  - mcp__deepwiki__read_wiki_contents
 ---
 
 # Sequence Diagrams For Samples
 
 ## Goal
 
-Read a user-specified target directory under `samples/` and write:
+Read a user-specified target (local directory under `samples/` or a public GitHub repository) and write:
 
 - `<target_sample_dir>/doc/sequence.md`
 
 ## Target Selection
 
-1. If the user explicitly references one directory under `samples/`, use that directory.
-2. If the user references a file inside `samples/`, normalize to the enclosing sample directory.
-3. If the user references multiple sample directories, ask which one to use.
-4. If no target under `samples/` is specified, ask for it before proceeding.
+1. If the user explicitly provides a GitHub repository URL or `owner/repo` reference, treat it as a public repository target and use DeepWiki MCP (see **GitHub Repository via DeepWiki** below).
+2. If the user explicitly references one directory under `samples/`, use that directory with local file reading.
+3. If the user references a file inside `samples/`, normalize to the enclosing sample directory.
+4. If the user references multiple sample directories, ask which one to use.
+5. If no target is specified, ask for it before proceeding.
 
-## Read Scope
+## GitHub Repository via DeepWiki
+
+When the target is a public GitHub repository (`owner/repo` or a GitHub URL):
+
+1. Extract `owner/repo` from the reference.
+2. Use `mcp__deepwiki__read_wiki_structure` to identify topics related to request flow, API handlers, or runtime behavior.
+3. Use `mcp__deepwiki__ask_question` to collect flow information. Suggested questions:
+   - "What is the main request or data flow in this system?"
+   - "How do the frontend and backend communicate?"
+   - "What are the key API endpoints and how are they called?"
+   - "What external services or dependencies are involved in the main flow?"
+4. Use `mcp__deepwiki__read_wiki_contents` for specific flow or interaction topics identified in the wiki.
+5. Write the output to `doc/<repo-name>/sequence.md` (create the directory as needed).
+
+## Read Scope (local samples)
 
 Prioritize entrypoints, API handlers, UI request flow, orchestration logic, workers, and external integration points under `<target_sample_dir>`.
 

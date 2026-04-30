@@ -7,6 +7,9 @@ allowed-tools:
   - Write
   - WebFetch
   - WebSearch
+  - mcp__deepwiki__ask_question
+  - mcp__deepwiki__read_wiki_structure
+  - mcp__deepwiki__read_wiki_contents
 ---
 
 # Issue Insights Report
@@ -38,6 +41,20 @@ Use GitHub data as the source of truth for the problem statement.
   - Issue title
   - Issue body / description
 - Do not invent acceptance criteria that are not present in the Issue
+
+## How to inspect the Target repository via DeepWiki
+
+When `README.md` specifies a GitHub public repository as `Target`:
+
+1. Extract `owner/repo` from the Target reference.
+2. Use `mcp__deepwiki__read_wiki_structure` first to understand the repository's topic map.
+3. Use `mcp__deepwiki__ask_question` to collect evidence for each required category:
+   - "What is the directory structure and what does each major directory do?"
+   - "What are the main API endpoints or interfaces defined?"
+   - "What are the key data models or schemas?"
+   - "How is state, session, or lifecycle managed?"
+4. Use `mcp__deepwiki__read_wiki_contents` for specific topics identified in the wiki structure.
+5. Prefer DeepWiki results over WebFetch/WebSearch when the repository is public and indexed by DeepWiki. Fall back to WebFetch or `gh` CLI when DeepWiki returns insufficient detail.
 
 ## How to inspect the target directory
 

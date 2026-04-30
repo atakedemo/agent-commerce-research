@@ -1,28 +1,47 @@
 ---
 name: design-overview-sample
-description: Generate a design overview document for a user-specified directory under `samples/`. Use when the user asks for architecture summary, design overview, component responsibilities, directory structure, or code-based documentation for a sample implementation.
+description: Generate a design overview document for a user-specified directory under `samples/` or a public GitHub repository. Use when the user asks for architecture summary, design overview, component responsibilities, directory structure, or code-based documentation for a sample implementation or a public repository.
 allowed-tools:
   - Bash
   - Read
   - Write
+  - mcp__deepwiki__ask_question
+  - mcp__deepwiki__read_wiki_structure
+  - mcp__deepwiki__read_wiki_contents
 ---
 
 # Design Overview For Samples
 
 ## Goal
 
-Read a user-specified target directory under `samples/` and write:
+Read a user-specified target (local directory under `samples/` or a public GitHub repository) and write:
 
 - `<target_sample_dir>/doc/design-overview.md`
 
 ## Target Selection
 
-1. If the user explicitly references one directory under `samples/`, use that directory.
-2. If the user references a file inside `samples/`, normalize to the enclosing sample directory.
-3. If the user references multiple sample directories, ask which one to use.
-4. If no target under `samples/` is specified, ask for it before proceeding.
+1. If the user explicitly provides a GitHub repository URL or `owner/repo` reference, treat it as a public repository target and use DeepWiki MCP (see **GitHub Repository via DeepWiki** below).
+2. If the user explicitly references one directory under `samples/`, use that directory with local file reading.
+3. If the user references a file inside `samples/`, normalize to the enclosing sample directory.
+4. If the user references multiple sample directories, ask which one to use.
+5. If no target is specified, ask for it before proceeding.
 
-## Read Scope
+## GitHub Repository via DeepWiki
+
+When the target is a public GitHub repository (`owner/repo` or a GitHub URL):
+
+1. Extract `owner/repo` from the reference.
+2. Use `mcp__deepwiki__read_wiki_structure` to understand the repository's overall structure.
+3. Use `mcp__deepwiki__ask_question` to collect the information needed for each output section. Suggested questions:
+   - "What is the purpose and overall architecture of this repository?"
+   - "What are the main components and their responsibilities?"
+   - "What are the key data models or entities?"
+   - "What is the main request or data flow?"
+   - "What are the configuration or entry points for this project?"
+4. Use `mcp__deepwiki__read_wiki_contents` when you need detail on a specific topic identified from the wiki structure.
+5. Write the output to `doc/<repo-name>/design-overview.md` (create the directory as needed).
+
+## Read Scope (local samples)
 
 Within `<target_sample_dir>`, prioritize:
 
