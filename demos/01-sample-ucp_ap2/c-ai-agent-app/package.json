@@ -1,0 +1,19 @@
+{
+  "name": "@ucp-research/c-ai-agent-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mock AI agent frontend for UCP Shopping end-to-end verification (b-mcp-server).",
+  "scripts": {
+    "start": "node src/server.js",
+    "demo": "node src/demo.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.51.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

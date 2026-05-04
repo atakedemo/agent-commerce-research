@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UCP Shopping Agent Demo</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #f4f6f8;
+      --surface: #ffffff;
+      --primary: #1a1a2e;
+      --accent:  #4f7ef8;
+      --green:   #2e9e5b;
+      --red:     #d93025;
+      --border:  #e0e0e0;
+      --text:    #333;
+      --muted:   #777;
+      --code-bg: #1e1e2e;
+    }
+
+    body {
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+    header p  { font-size: 0.75rem; opacity: 0.65; margin-top: 2px; }
+    .badge {
+      margin-left: auto;
+      font-size: 0.7rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.15);
+      white-space: nowrap;
+    }
+    .badge.on  { background: rgba(46,158,91,0.8); }
+    .badge.off { background: rgba(217,48,37,0.6); }
+
+    /* ── Layout ── */
+    main { max-width: 860px; margin: 2rem auto; padding: 0 1rem 4rem; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 0.375rem; margin-bottom: 1.5rem; }
+    .tab-btn {
+      padding: 0.45rem 1.25rem;
+      border: 2px solid var(--primary);
+      background: var(--surface);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab-btn.active { background: var(--primary); color: #fff; }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Demo tab ── */
+    .demo-desc { color: var(--muted); font-size: 0.875rem; margin-bottom: 1.25rem; line-height: 1.6; }
+
+    .flow-diagram {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      flex-wrap: wrap;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.25rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .flow-diagram .node {
+      padding: 0.25rem 0.6rem;
+      background: var(--bg);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .flow-diagram .arrow { color: var(--border); font-size: 1rem; }
+
+    .run-btn {
+      background: var(--green);
+      color: #fff;
+      border: none;
+      padding: 0.65rem 2rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Step cards ── */
+    .steps { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .step-card {
+      background: var(--surface);
+      border-radius: 8px;
+      border-left: 4px solid var(--green);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      overflow: hidden;
+    }
+    .step-card.fail { border-left-color: var(--red); }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.65rem 1rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .step-icon { font-size: 1.1rem; }
+    .step-name { flex: 1; font-size: 0.875rem; font-weight: 600; }
+    .step-tool {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-family: monospace;
+    }
+    .step-toggle { color: var(--muted); font-size: 0.8rem; transition: transform 0.2s; }
+    .step-toggle.open { transform: rotate(180deg); }
+
+    .step-body {
+      border-top: 1px solid var(--border);
+      padding: 0.6rem 1rem;
+      display: none;
+    }
+    .step-body pre {
+      background: var(--code-bg);
+      color: #cdd6f4;
+      padding: 0.75rem;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      overflow-x: auto;
+      max-height: 220px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    /* ── Chat tab ── */
+    .chat-notice {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 1.5rem 2rem;
+      text-align: center;
+      color: #5a4000;
+    }
+    .chat-notice h3 { margin-bottom: 0.5rem; }
+    .chat-notice code {
+      background: rgba(0,0,0,0.08);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .chat-notice p { font-size: 0.875rem; line-height: 1.6; }
+
+    .chat-wrap {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      display: flex;
+      flex-direction: column;
+      height: 520px;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .msg { display: flex; flex-direction: column; max-width: 78%; }
+    .msg.user  { align-self: flex-end; align-items: flex-end; }
+    .msg.bot   { align-self: flex-start; }
+    .msg.sys   { align-self: center; max-width: 100%; }
+
+    .msg .bubble {
+      padding: 0.55rem 0.9rem;
+      border-radius: 14px;
+      font-size: 0.875rem;
+      line-height: 1.55;
+    }
+    .msg.user .bubble { background: var(--primary); color: #fff; border-radius: 14px 14px 2px 14px; }
+    .msg.bot  .bubble { background: var(--bg); border: 1px solid var(--border); border-radius: 14px 14px 14px 2px; }
+    .msg.sys  .bubble { background: #fff3cd; color: #856404; font-size: 0.8rem; border-radius: 8px; text-align: center; }
+
+    .msg .tool-log {
+      margin-top: 0.25rem;
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .chat-input-row {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+    .chat-input-row input {
+      flex: 1;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.875rem;
+      outline: none;
+    }
+    .chat-input-row input:focus { border-color: var(--accent); }
+    .chat-input-row input:disabled { background: var(--bg); }
+    .send-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.55rem 1.1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .chat-hint {
+      margin-top: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .chip {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      margin: 0.2rem;
+      font-size: 0.75rem;
+      transition: background 0.15s;
+    }
+    .chip:hover { background: var(--bg); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🛍️ UCP Shopping Agent Demo</h1>
+    <p>b-mcp-server (UCP Shopping MCP) との疎通確認</p>
+  </div>
+  <div id="api-badge" class="badge">読み込み中...</div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="demo">デモフロー</button>
+    <button class="tab-btn"        data-tab="chat">AI チャット</button>
+  </div>
+
+  <!-- ── Demo Tab ── -->
+  <div id="pane-demo" class="tab-pane active">
+    <p class="demo-desc">
+      ショッピングの全工程を自動実行して b-mcp-server との疎通を確認します。<br>
+      各ステップで UCP MCP ツールを呼び出し、レスポンスを表示します。
+    </p>
+
+    <div class="flow-diagram">
+      <span class="node">search_catalog</span>
+      <span class="arrow">→</span>
+      <span class="node">get_product</span>
+      <span class="arrow">→</span>
+      <span class="node">create_cart</span>
+      <span class="arrow">→</span>
+      <span class="node">create_checkout</span>
+      <span class="arrow">→</span>
+      <span class="node">update_checkout</span>
+      <span class="arrow">→</span>
+      <span class="node">complete_checkout</span>
+    </div>
+
+    <button class="run-btn" id="run-btn">▶ デモを実行</button>
+
+    <div id="steps" class="steps"></div>
+  </div>
+
+  <!-- ── Chat Tab ── -->
+  <div id="pane-chat" class="tab-pane">
+    <div id="chat-area"></div>
+  </div>
+</main>
+
+<script>
+/* ── State ──────────────────────────────────────────────────────────────────── */
+let chatHistory = [];
+let hasApiKey = false;
+
+/* ── Init ───────────────────────────────────────────────────────────────────── */
+(async function init() {
+  // Tab switching
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("pane-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  // Demo button
+  document.getElementById("run-btn").addEventListener("click", runDemo);
+
+  // Check API status
+  try {
+    const status = await fetch("/api/status").then(r => r.json());
+    hasApiKey = status.anthropic;
+  } catch {}
+
+  const badge = document.getElementById("api-badge");
+  badge.textContent = hasApiKey ? "ANTHROPIC_API_KEY ✅" : "ANTHROPIC_API_KEY ❌";
+  badge.className = "badge " + (hasApiKey ? "on" : "off");
+
+  renderChatArea();
+})();
+
+/* ── Demo Flow ───────────────────────────────────────────────────────────────── */
+async function runDemo() {
+  const btn    = document.getElementById("run-btn");
+  const stepsEl = document.getElementById("steps");
+
+  btn.disabled = true;
+  btn.textContent = "⏳ 実行中...";
+  stepsEl.innerHTML = `<div style="color:var(--muted);font-size:.875rem;padding:.5rem 0">b-mcp-server に接続中...</div>`;
+
+  try {
+    const res = await fetch("/api/demo", { method: "POST" });
+    const { ok, steps, error } = await res.json();
+
+    if (!ok) {
+      stepsEl.innerHTML = `<div style="color:var(--red);padding:.75rem;background:var(--surface);border-radius:8px;border:1px solid var(--border)">❌ エラー: ${esc(error)}</div>`;
+      return;
+    }
+
+    stepsEl.innerHTML = steps.map((s, i) => `
+      <div class="step-card ${s.ok ? "" : "fail"}" id="card-${i}">
+        <div class="step-header" onclick="toggleBody(${i})">
+          <span class="step-icon">${s.ok ? "✅" : "❌"}</span>
+          <span class="step-name">${i + 1}. ${esc(s.name)}</span>
+          <span class="step-tool">${s.tool}</span>
+          <span class="step-toggle" id="tog-${i}">▼</span>
+        </div>
+        <div class="step-body" id="body-${i}">
+          <pre>${esc(JSON.stringify(s.data, null, 2))}</pre>
+        </div>
+      </div>
+    `).join("");
+
+    // Open all steps
+    steps.forEach((_, i) => showBody(i, true));
+
+  } catch (err) {
+    stepsEl.innerHTML = `<div style="color:var(--red)">通信エラー: ${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶ デモを再実行";
+  }
+}
+
+function toggleBody(i) {
+  const body = document.getElementById("body-" + i);
+  const tog  = document.getElementById("tog-" + i);
+  if (!body) return;
+  const open = body.style.display !== "block";
+  showBody(i, open);
+}
+
+function showBody(i, open) {
+  const body = document.getElementById("body-" + i);
+  const tog  = document.getElementById("tog-" + i);
+  if (!body) return;
+  body.style.display = open ? "block" : "none";
+  if (tog) tog.className = "step-toggle" + (open ? " open" : "");
+}
+
+/* ── Chat ────────────────────────────────────────────────────────────────────── */
+function renderChatArea() {
+  const area = document.getElementById("chat-area");
+
+  if (!hasApiKey) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ ANTHROPIC_API_KEY が設定されていません</h3>
+        <p>AIチャット機能を使うには環境変数 <code>ANTHROPIC_API_KEY</code> を設定してサーバを起動してください。</p>
+        <p style="margin-top:.5rem">例: <code>ANTHROPIC_API_KEY=sk-ant-... npm start</code></p>
+        <p style="margin-top:.75rem;color:var(--muted)">「デモフロー」タブは API キー不要で利用できます。</p>
+      </div>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="chat-wrap">
+      <div class="chat-messages" id="chat-msgs">
+        <div class="msg sys"><div class="bubble">
+          こんにちは！UCP ショッピングアシスタントです。<br>
+          商品検索・カート・チェックアウトをお手伝いします。
+        </div></div>
+      </div>
+      <div class="chat-input-row">
+        <input id="chat-in" type="text" placeholder="例：ランニングシューズを探して" />
+        <button class="send-btn" id="send-btn">送信</button>
+      </div>
+    </div>
+    <div class="chat-hint">
+      試してみる：
+      <span class="chip" onclick="fillChat(this)">ランニングシューズを検索して</span>
+      <span class="chip" onclick="fillChat(this)">Blue Running Shoes の詳細を教えて</span>
+      <span class="chip" onclick="fillChat(this)">カートを作って item_123 を 1 つ追加して、チェックアウトまで完了させて</span>
+    </div>`;
+
+  document.getElementById("send-btn").addEventListener("click", sendChat);
+  document.getElementById("chat-in").addEventListener("keydown", e => {
+    if (e.key === "Enter") sendChat();
+  });
+}
+
+function fillChat(chip) {
+  const input = document.getElementById("chat-in");
+  if (input) { input.value = chip.textContent.trim(); input.focus(); }
+}
+
+async function sendChat() {
+  const input   = document.getElementById("chat-in");
+  const sendBtn = document.getElementById("send-btn");
+  const msgs    = document.getElementById("chat-msgs");
+  const message = input.value.trim();
+  if (!message) return;
+
+  appendMsg(msgs, "user", esc(message));
+  input.value   = "";
+  input.disabled  = true;
+  sendBtn.disabled = true;
+
+  const loadingId = "ld-" + Date.now();
+  appendMsg(msgs, "bot", "⏳ 考え中...", loadingId);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, history: chatHistory }),
+    });
+    const result = await res.json();
+
+    document.getElementById(loadingId)?.remove();
+
+    if (!result.ok) {
+      appendMsg(msgs, "sys", "エラー: " + esc(result.error));
+    } else {
+      chatHistory = result.history;
+      const log = result.toolCallLog?.length
+        ? `<div class="tool-log">🔧 ${result.toolCallLog.map(t => t.tool).join(" → ")}</div>`
+        : "";
+      appendMsg(msgs, "bot", esc(result.text).replace(/\n/g, "<br>") + log);
+    }
+  } catch (err) {
+    document.getElementById(loadingId)?.remove();
+    appendMsg(msgs, "sys", "通信エラー: " + esc(err.message));
+  } finally {
+    input.disabled   = false;
+    sendBtn.disabled  = false;
+    msgs.scrollTop    = msgs.scrollHeight;
+    input.focus();
+  }
+}
+
+function appendMsg(container, role, html, id) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  if (id) div.id = id;
+  div.innerHTML = `<div class="bubble">${html}</div>`;
+  container.appendChild(div);
+}
+
+/* ── Utils ───────────────────────────────────────────────────────────────────── */
+function esc(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+</script>
+</body>
+</html>
