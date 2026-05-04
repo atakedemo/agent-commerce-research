@@ -74,6 +74,8 @@ test/
 
 ## 現在の合格状況
 
+**45 tests / 0 fail / 0 skip**（Phase 2 完了）
+
 ### `checkout.test.js`（21 テスト）
 
 | テストグループ | 内容 | 状態 |
@@ -85,25 +87,24 @@ test/
 | `cancel_checkout (§13)` | キャンセル・idempotency-key・not_found | ✅ pass |
 | `lifecycle: create → update → complete` | 状態遷移の連続確認 | ✅ pass |
 | `lifecycle: create → cancel` | 状態遷移の連続確認 | ✅ pass |
-| `state invariants` | 不正な状態遷移を拒否すること | ❌ **3 fail** |
-
-**失敗している 3 テスト**（Phase 2 で修正予定）:
-
-| テスト | 期待する動作 |
-| --- | --- |
-| `complete_checkout: cannot complete a canceled checkout` | canceled → complete はエラー |
-| `update_checkout: cannot update a canceled checkout` | canceled → update はエラー |
-| `cancel_checkout: cannot cancel a completed checkout` | completed → cancel はエラー |
+| `state invariants` | 不正な状態遷移を拒否すること | ✅ pass（全 4 テスト） |
 
 ### `catalog.test.js`（12 テスト）
 
-全テスト **skip** — `b-mcp-server` が catalog ツールを未実装のため。  
-テスト本体はコメントアウトで残置済み。実装後にコメントを解除する。
+| テストグループ | 内容 | 状態 |
+| --- | --- | --- |
+| `search_catalog (§3)` | キーワード・フィルタ・ページネーション・UCP capability | ✅ pass |
+| `get_product (§4)` | 詳細取得・option フィルタ・not_found | ✅ pass |
+| `lookup_catalog (§5)` | 複数 ID 解決・部分解決・UCP capability | ✅ pass |
 
 ### `cart.test.js`（12 テスト）
 
-全テスト **skip** — `b-mcp-server` が cart ツールを未実装のため。  
-テスト本体はコメントアウトで残置済み。実装後にコメントを解除する。
+| テストグループ | 内容 | 状態 |
+| --- | --- | --- |
+| `create_cart (§6)` | id/line_items/totals/continue_url・空カート・UCP capability | ✅ pass |
+| `get_cart (§7)` | スナップショット取得・not_found | ✅ pass |
+| `update_cart (§8)` | 全体置換・get→merge→update パターン・totals 再計算・not_found | ✅ pass |
+| `cancel_cart (§8)` | キャンセル・not_found・canceled 後 update 不可 | ✅ pass |
 
 ---
 
@@ -168,13 +169,13 @@ test/
 | # | テストケース | 検証内容 | 状態 |
 | --- | --- | --- | --- |
 | 1 | update_checkout: completed checkout keeps completed status | complete 済みを update しても `status === "completed"` を維持 | ✅ pass |
-| 2 | complete_checkout: cannot complete a canceled checkout | cancel 済みを complete しようとすると `isError === true` | ❌ fail |
-| 3 | update_checkout: cannot update a canceled checkout | cancel 済みを update しようとすると `isError === true` | ❌ fail |
-| 4 | cancel_checkout: cannot cancel a completed checkout | complete 済みを cancel しようとすると `isError === true` | ❌ fail |
+| 2 | complete_checkout: cannot complete a canceled checkout | cancel 済みを complete しようとすると `isError === true` | ✅ pass |
+| 3 | update_checkout: cannot update a canceled checkout | cancel 済みを update しようとすると `isError === true` | ✅ pass |
+| 4 | cancel_checkout: cannot cancel a completed checkout | complete 済みを cancel しようとすると `isError === true` | ✅ pass |
 
 ---
 
-### `catalog.test.js`（全 skip）
+### `catalog.test.js`
 
 #### `search_catalog (§3)` — 6 テスト
 
@@ -205,7 +206,7 @@ test/
 
 ---
 
-### `cart.test.js`（全 skip）
+### `cart.test.js`
 
 #### `create_cart (§6)` — 3 テスト
 
@@ -243,11 +244,11 @@ test/
 
 ## Phase 別の目標
 
-| Phase | 目標 |
-| --- | --- |
-| Phase 1（現在） | テスト環境の構築。checkout テストが実行でき、CRUD・ライフサイクルは通過 |
-| Phase 2 | `b-mcp-server` にモック実装を追加し、`checkout.test.js` 全 21 テストを pass にする |
-| Phase 3 | Medusa バックエンドと連携し、catalog・cart テストのコメントアウトを解除して全テストを pass にする |
+| Phase | 目標 | 状態 |
+| --- | --- | --- |
+| Phase 1 | テスト環境の構築。checkout テストが実行でき、CRUD・ライフサイクルは通過 | ✅ 完了 |
+| Phase 2 | `b-mcp-server` に全 12 ツールのモック実装を追加し、全 45 テストを pass にする | ✅ 完了 |
+| Phase 3 | Medusa バックエンドと連携し、catalog・cart ツールを実 API に差し替えて全テストを pass にする | 未着手 |
 
 ---
 
