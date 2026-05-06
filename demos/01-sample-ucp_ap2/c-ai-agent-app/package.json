@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Mock AI agent frontend for UCP Shopping end-to-end verification (b-mcp-server).",
   "scripts": {
-    "start": "node src/server.js",
-    "demo": "node src/demo.js"
+    "start": "node --env-file=.env src/server.js",
+    "demo": "node --env-file=.env src/demo.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

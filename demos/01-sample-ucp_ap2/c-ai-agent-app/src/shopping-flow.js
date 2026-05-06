@@ -22,7 +22,7 @@ export async function runShoppingFlow(client) {
     "search_catalog",
     await callTool(client, "search_catalog", {
       meta: UCP_META,
-      catalog: { query: "running shoes", pagination: { limit: 5 } },
+      catalog: { pagination: { limit: 5 } },
     }),
   );
   if (s1.isError) return steps;
@@ -48,11 +48,11 @@ export async function runShoppingFlow(client) {
 
   // ── Step 3: Create cart ─────────────────────────────────────────────────────
   const s3 = record(
-    "カートを作成（item_123 を 1 点）",
+    `カートを作成（${product.title} を 1 点）`,
     "create_cart",
     await callTool(client, "create_cart", {
       meta: UCP_META,
-      cart: { line_items: [{ item: { id: "item_123" }, quantity: 1 }] },
+      cart: { line_items: variant ? [{ item: { id: variant.id }, quantity: 1 }] : [] },
     }),
   );
   if (s3.isError) return steps;

@@ -46,7 +46,7 @@ const carts = new Map();
 const CATALOG = [
   {
     id: "prod_abc123",
-    title: "Blue Running Shoes",
+    title: "MOCK_Blue Running Shoes",
     categories: ["Footwear"],
     options: [
       { name: "Color", values: [{ label: "Blue", available: true }] },
@@ -63,7 +63,7 @@ const CATALOG = [
   },
   {
     id: "prod_def456",
-    title: "Red Style Shirt",
+    title: "MOCK_Red Style Shirt",
     categories: ["Clothing"],
     options: [
       { name: "Color", values: [{ label: "Red", available: true }] },
@@ -92,7 +92,7 @@ const CATALOG = [
   },
   {
     id: "prod_ghi789",
-    title: "White Running Shoes",
+    title: "MOCK_White Running Shoes",
     categories: ["Footwear"],
     options: [
       { name: "Color", values: [{ label: "White", available: true }] },
