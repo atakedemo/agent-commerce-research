@@ -63,14 +63,15 @@ describe("search_catalog (§3)", () => {
   });
 
   it("supports pagination via limit and cursor", async () => {
+    // No query filter — use all products so the test works in both mock and Medusa mode
     const { data: page1 } = await callTool(client, "search_catalog", {
       meta: META,
-      catalog: { query: "shoes", pagination: { limit: 1 } },
+      catalog: { pagination: { limit: 1 } },
     });
-    assert.ok(page1.pagination.has_next_page);
+    assert.ok(page1.pagination.has_next_page, "catalog must have at least 2 products to test pagination");
     const { data: page2 } = await callTool(client, "search_catalog", {
       meta: META,
-      catalog: { query: "shoes", pagination: { limit: 1, cursor: page1.pagination.cursor } },
+      catalog: { pagination: { limit: 1, cursor: page1.pagination.cursor } },
     });
     assert.notDeepEqual(page2.products[0].id, page1.products[0].id);
   });
@@ -128,31 +129,45 @@ describe("get_product (§4)", () => {
 
 describe("lookup_catalog (§5)", () => {
   let client;
-  before(async () => { client = await createMcpClient(); });
+  let knownIds = [];
+
+  before(async () => {
+    client = await createMcpClient();
+    // Discover real product IDs from search_catalog (works in both mock and Medusa mode)
+    const { data } = await callTool(client, "search_catalog", {
+      meta: META,
+      catalog: { pagination: { limit: 3 } },
+    });
+    knownIds = (data.products ?? []).map(p => p.id);
+  });
   after(async () => { await client.close(); });
 
   it("resolves multiple product ids in a single call", async () => {
+    const ids = knownIds.slice(0, 2);
+    assert.ok(ids.length >= 2, `need at least 2 products in catalog, got ${ids.length}`);
     const { isError, data } = await callTool(client, "lookup_catalog", {
       meta: META,
-      catalog: { ids: ["prod_abc123", "prod_def456"] },
+      catalog: { ids },
     });
     assert.equal(isError, false);
     assert.equal(data.products.length, 2);
   });
 
   it("returns only found ids when some ids are unknown", async () => {
+    const [id] = knownIds;
+    assert.ok(id, "need at least 1 product in catalog");
     const { data } = await callTool(client, "lookup_catalog", {
       meta: META,
-      catalog: { ids: ["prod_abc123", "prod_does_not_exist"] },
+      catalog: { ids: [id, "prod_does_not_exist_zzz999"] },
     });
     assert.equal(data.products.length, 1);
-    assert.equal(data.products[0].id, "prod_abc123");
+    assert.equal(data.products[0].id, id);
   });
 
   it("returns ucp capability block in response", async () => {
     const { data } = await callTool(client, "lookup_catalog", {
       meta: META,
-      catalog: { ids: ["prod_abc123"] },
+      catalog: { ids: knownIds.slice(0, 1) },
     });
     assert.ok(data.ucp?.capabilities?.["dev.ucp.shopping.catalog.lookup"]);
   });
