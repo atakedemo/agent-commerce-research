@@ -1,6 +1,6 @@
 # c-ai-agent-app
 
-`b-mcp-server` の UCP Shopping MCP ツールと AI エージェント（Claude）を組み合わせた、エンドツーエンド疎通確認用のモックフロントエンドアプリ。
+`b-mcp-server` の UCP Shopping MCP ツールと AI エージェント（Gemini）を組み合わせた、エンドツーエンド疎通確認用のモックフロントエンドアプリ。
 
 sequence.md が示すアクター構成（ユーザー → フロントエンド → バックエンド → MCP）のうち、フロントエンド〜バックエンド〜MCP の部分を担う。
 
@@ -12,7 +12,7 @@ sequence.md が示すアクター構成（ユーザー → フロントエンド
 | --- | --- |
 | Node.js | v18 以上 |
 | b-mcp-server | `../b-mcp-server/` の依存インストール済み |
-| ANTHROPIC_API_KEY | AI チャット機能のみ必要（デモフローは不要） |
+| GOOGLE_AI_STUDIO_API_KEY | AI チャット機能のみ必要（デモフローは不要） |
 
 ---
 
@@ -84,10 +84,10 @@ npm start
 
 ### Web サーバ（AI チャット機能付き）
 
-Claude が MCP ツールを自律的に呼び出してショッピングを代行する。`ANTHROPIC_API_KEY` が必要。
+Gemini が MCP ツールを自律的に呼び出してショッピングを代行する。`GOOGLE_AI_STUDIO_API_KEY` が必要。
 
 ```bash
-ANTHROPIC_API_KEY=sk-ant-... npm start
+GOOGLE_AI_STUDIO_API_KEY=AIza... npm start
 ```
 
 起動後、<http://localhost:3100> の「AI チャット」タブから操作できる。
@@ -121,9 +121,9 @@ c-ai-agent-app/
 | メソッド | パス | 説明 |
 | --- | --- | --- |
 | `GET` | `/` | SPA（index.html）を配信 |
-| `GET` | `/api/status` | `{ "anthropic": true/false }` を返す |
+| `GET` | `/api/status` | `{ "gemini": true/false }` を返す |
 | `POST` | `/api/demo` | 全 6 ステップを実行し `{ ok, steps[] }` を返す |
-| `POST` | `/api/chat` | Claude + MCP agentic loop。`ANTHROPIC_API_KEY` 必須 |
+| `POST` | `/api/chat` | Gemini + MCP agentic loop。`GOOGLE_AI_STUDIO_API_KEY` 必須 |
 
 ### POST /api/demo — リクエスト / レスポンス例
 
@@ -182,7 +182,7 @@ curl -X POST http://localhost:3100/api/chat \
 
 | 変数 | 必須 | 説明 |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | チャット機能のみ | Claude API キー（`sk-ant-...`） |
+| `GOOGLE_AI_STUDIO_API_KEY` | チャット機能のみ | Google AI Studio API キー（`AIza...`） |
 | `PORT` | 任意 | HTTP サーバのポート番号（デフォルト: `3100`） |
 | `EC_BACKEND_URL` | 任意 | Medusa バックエンド URL（設定時は `create_checkout` が Store API を呼ぶ） |
 | `EC_PUBLISHABLE_KEY` | 任意 | Medusa の Publishable API Key（`pk_...`） |
