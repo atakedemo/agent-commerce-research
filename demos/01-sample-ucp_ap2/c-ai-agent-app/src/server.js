@@ -3,16 +3,16 @@
  *
  * Routes:
  *   GET  /            → public/index.html (SPA)
- *   GET  /api/status  → { anthropic: boolean }
+ *   GET  /api/status  → { gemini: boolean }
  *   POST /api/demo    → runs full shopping flow, returns { ok, steps }
- *   POST /api/chat    → AI agent chat (requires ANTHROPIC_API_KEY)
+ *   POST /api/chat    → AI agent chat (requires GOOGLE_AI_STUDIO_API_KEY)
  *                       body: { message, history? }
  *                       returns: { ok, text, toolCallLog, history }
  */
 import express from "express";
 import { fileURLToPath } from "node:url";
 import { resolve, dirname } from "node:path";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createMcpClient, callTool } from "./mcp-client.js";
 import { runShoppingFlow } from "./shopping-flow.js";
 
@@ -28,6 +28,19 @@ Rules:
 - Respond in the same language the user writes in (Japanese if Japanese input).
 - When a user wants to purchase something, guide them through: search → product details → cart → checkout → complete.`;
 
+/** Strip JSON Schema fields unsupported by Gemini function declarations. */
+function cleanSchema(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  const { additionalProperties, $schema, ...rest } = schema;
+  if (rest.properties) {
+    rest.properties = Object.fromEntries(
+      Object.entries(rest.properties).map(([k, v]) => [k, cleanSchema(v)]),
+    );
+  }
+  if (rest.items) rest.items = cleanSchema(rest.items);
+  return rest;
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.static(resolve(__dirname, "../public")));
@@ -35,7 +48,7 @@ app.use(express.static(resolve(__dirname, "../public")));
 // ── GET /api/status ────────────────────────────────────────────────────────────
 
 app.get("/api/status", (_req, res) => {
-  res.json({ anthropic: !!process.env.ANTHROPIC_API_KEY });
+  res.json({ gemini: !!process.env.GOOGLE_AI_STUDIO_API_KEY });
 });
 
 // ── POST /api/demo ─────────────────────────────────────────────────────────────
@@ -56,8 +69,8 @@ app.post("/api/demo", async (_req, res) => {
 // ── POST /api/chat ─────────────────────────────────────────────────────────────
 
 app.post("/api/chat", async (req, res) => {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ ok: false, error: "ANTHROPIC_API_KEY が設定されていません" });
+  if (!process.env.GOOGLE_AI_STUDIO_API_KEY) {
+    return res.status(503).json({ ok: false, error: "GOOGLE_AI_STUDIO_API_KEY が設定されていません" });
   }
 
   const { message, history = [] } = req.body;
@@ -69,60 +82,47 @@ app.post("/api/chat", async (req, res) => {
   try {
     client = await createMcpClient();
 
-    // Convert MCP tools to Anthropic tool format
+    // Convert MCP tools to Gemini function declaration format
     const { tools: mcpTools } = await client.listTools();
-    const anthropicTools = mcpTools.map((t) => ({
+    const functionDeclarations = mcpTools.map((t) => ({
       name: t.name,
       description: t.description ?? "",
-      input_schema: t.inputSchema,
+      parameters: cleanSchema(t.inputSchema),
     }));
 
-    const anthropic = new Anthropic();
-    const messages = [...history, { role: "user", content: message }];
-    const toolCallLog = [];
-
-    // Agentic loop: keep calling Claude until no more tool_use
-    let response = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages,
-      tools: anthropicTools,
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-flash-preview",
+      systemInstruction: SYSTEM_PROMPT,
+      tools: [{ functionDeclarations }],
     });
 
-    while (response.stop_reason === "tool_use") {
-      messages.push({ role: "assistant", content: response.content });
+    const chat = model.startChat({ history });
+    const toolCallLog = [];
 
-      const toolResults = [];
-      for (const block of response.content) {
-        if (block.type !== "tool_use") continue;
+    // Agentic loop: keep calling Gemini until no more function calls
+    let response = await chat.sendMessage(message);
 
-        const { isError, data } = await callTool(client, block.name, block.input);
-        toolCallLog.push({ tool: block.name, input: block.input, isError });
+    while (true) {
+      const parts = response.response.candidates?.[0]?.content?.parts ?? [];
+      const fnCalls = parts.filter((p) => p.functionCall);
+      if (fnCalls.length === 0) break;
 
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: block.id,
-          content: JSON.stringify(data),
-          is_error: isError,
-        });
+      const fnResponses = [];
+      for (const part of fnCalls) {
+        const { name, args } = part.functionCall;
+        const { isError, data } = await callTool(client, name, args);
+        toolCallLog.push({ tool: name, input: args, isError });
+        fnResponses.push({ functionResponse: { name, response: data } });
       }
 
-      messages.push({ role: "user", content: toolResults });
-
-      response = await anthropic.messages.create({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 4096,
-        system: SYSTEM_PROMPT,
-        messages,
-        tools: anthropicTools,
-      });
+      response = await chat.sendMessage(fnResponses);
     }
 
-    const text = response.content.find((b) => b.type === "text")?.text ?? "";
-    messages.push({ role: "assistant", content: response.content });
+    const text = response.response.text();
+    const updatedHistory = await chat.getHistory();
 
-    res.json({ ok: true, text, toolCallLog, history: messages });
+    res.json({ ok: true, text, toolCallLog, history: updatedHistory });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   } finally {
@@ -133,11 +133,11 @@ app.post("/api/chat", async (req, res) => {
 // ── Start ──────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
-  const apiStatus = process.env.ANTHROPIC_API_KEY
+  const apiStatus = process.env.GOOGLE_AI_STUDIO_API_KEY
     ? "✅ 有効（AIチャット機能が使えます）"
     : "❌ 未設定（AIチャット機能は無効）";
   console.log(`\nUCP Shopping Agent Demo`);
-  console.log(`  URL              : http://localhost:${PORT}`);
-  console.log(`  ANTHROPIC_API_KEY: ${apiStatus}`);
+  console.log(`  URL                    : http://localhost:${PORT}`);
+  console.log(`  GOOGLE_AI_STUDIO_API_KEY: ${apiStatus}`);
   console.log(`\nCtrl+C で停止\n`);
 });

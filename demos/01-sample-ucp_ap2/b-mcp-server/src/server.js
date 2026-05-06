@@ -47,7 +47,7 @@ const CATALOG = [
     variants: [
       {
         id: "var_abc123_blu_10",
-        price: { amount: 12000, currency: "USD" },
+        price: { amount: 12.00, currency: "USD" },
         availability: { available: true },
         options: [{ name: "Color", label: "Blue" }, { name: "Size", label: "10" }],
       },
@@ -70,7 +70,7 @@ const CATALOG = [
     variants: [
       {
         id: "var_def456_red_m",
-        price: { amount: 8000, currency: "USD" },
+        price: { amount: 8.99, currency: "USD" },
         availability: { available: true },
         options: [{ name: "Color", label: "Red" }, { name: "Size", label: "M" }],
       },
@@ -93,7 +93,7 @@ const CATALOG = [
     variants: [
       {
         id: "var_ghi789_wht_9",
-        price: { amount: 9000, currency: "USD" },
+        price: { amount: 9.99, currency: "USD" },
         availability: { available: true },
         options: [{ name: "Color", label: "White" }, { name: "Size", label: "9" }],
       },

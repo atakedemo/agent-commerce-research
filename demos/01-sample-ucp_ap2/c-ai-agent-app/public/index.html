@@ -333,11 +333,11 @@ let hasApiKey = false;
   // Check API status
   try {
     const status = await fetch("/api/status").then(r => r.json());
-    hasApiKey = status.anthropic;
+    hasApiKey = status.gemini;
   } catch {}
 
   const badge = document.getElementById("api-badge");
-  badge.textContent = hasApiKey ? "ANTHROPIC_API_KEY ✅" : "ANTHROPIC_API_KEY ❌";
+  badge.textContent = hasApiKey ? "GOOGLE_AI_STUDIO_API_KEY ✅" : "GOOGLE_AI_STUDIO_API_KEY ❌";
   badge.className = "badge " + (hasApiKey ? "on" : "off");
 
   renderChatArea();
@@ -409,9 +409,9 @@ function renderChatArea() {
   if (!hasApiKey) {
     area.innerHTML = `
       <div class="chat-notice">
-        <h3>⚠️ ANTHROPIC_API_KEY が設定されていません</h3>
-        <p>AIチャット機能を使うには環境変数 <code>ANTHROPIC_API_KEY</code> を設定してサーバを起動してください。</p>
-        <p style="margin-top:.5rem">例: <code>ANTHROPIC_API_KEY=sk-ant-... npm start</code></p>
+        <h3>⚠️ GOOGLE_AI_STUDIO_API_KEY が設定されていません</h3>
+        <p>AIチャット機能を使うには環境変数 <code>GOOGLE_AI_STUDIO_API_KEY</code> を設定してサーバを起動してください。</p>
+        <p style="margin-top:.5rem">例: <code>GOOGLE_AI_STUDIO_API_KEY=AIza... npm start</code></p>
         <p style="margin-top:.75rem;color:var(--muted)">「デモフロー」タブは API キー不要で利用できます。</p>
       </div>`;
     return;
