@@ -406,12 +406,14 @@ AP2 は UCP の checkout エンドポイントを前提とし、その上に Man
 
 [Verifiable Intent 仕様](https://github.com/agent-intent/verifiable-intent/blob/main/spec/credential-format.md)が定義する三層構造と AP2 Mandate の対応は以下のとおり。
 
-| 層 | 形式 | 署名者 | AP2 での対応 |
-|---|---|---|---|
-| L1 | Issuer-signed SD-JWT | Credential Issuer（第三者） | User Credential（身元証明） |
-| L2 | User-signed KB-SD-JWT | Trusted Surface（user_sk） | Open Checkout Mandate + Open Payment Mandate |
-| L3a | Agent-signed KB-JWT | Shopping Agent（agent_sk） | Closed Payment Mandate → Network/CP へ提出 |
-| L3b | Agent-signed KB-JWT | Shopping Agent（agent_sk） | Closed Checkout Mandate → Merchant へ提出 |
+| 層 | 形式 | 署名者 | 発行先・保管先 | AP2 での対応 |
+|---|---|---|---|---|
+| L1 | Issuer-signed SD-JWT | Credential Issuer（第三者） | **Trusted Surface**（TS が user_sk とペアで保管） | User Credential（身元証明） |
+| L2 | User-signed KB-SD-JWT | Trusted Surface（user_sk） | Shopping Agent（TS → SA に **L1+L2 セット**で渡される） | Open Checkout Mandate + Open Payment Mandate |
+| L3a | Agent-signed KB-SD-JWT | Shopping Agent（agent_sk） | Credential Provider / Network（SA → CP 経由） | Closed Payment Mandate → Network/CP へ提出 |
+| L3b | Agent-signed KB-SD-JWT | Shopping Agent（agent_sk） | Merchant（SA → MA へ直接提示） | Closed Checkout Mandate → Merchant へ提出 |
+
+L1 は Issuer が署名し **Trusted Surface に発行**される。TS はユーザ承認後に `Issuer_signed(UserCredential) + user_signed(Mandate)`（L1+L2）をセットで SA に渡す（[AP2 公式図: mandate_delegation_trusted_agent_provider.svg](https://raw.githubusercontent.com/google-agentic-commerce/AP2/main/docs/assets/mandate_delegation_trusted_agent_provider.svg) 参照）。SA はその後 L1 を CP・MA・NW に転送し、各検証者は Issuer の JWKS エンドポイントで L1 署名を独立検証する。
 
 L2 は「Immediate モード（有効期限 ~15 分）」と「Autonomous モード（24 時間〜30 日）」があり、HNP では Autonomous モードが使用される。各層は `sd_hash` で前層にバインドされる。
 
@@ -498,8 +500,8 @@ L2 は「Immediate モード（有効期限 ~15 分）」と「Autonomous モー
 |---|---|
 | 公式の呼称 | "Trusted Surface"（Identity Wallet という名称は仕様に登場しない） |
 | 実装形態 | アプリコンポーネント・スタンドアロンウォレット・プラットフォームUA のいずれも可 |
-| 主な役割 | Mandate Content をユーザに提示し、生体認証等でユーザ同意を取得、user_sk で署名 |
-| Credential Provider との違い | CP は"決済手段（Payment Credential）"を管理する別ロール。CP が "digital wallet" として実装されうるが、Trusted Surface とは別 |
+| 主な役割 | Issuer から発行された **L1（User Credential）を保管**し、Mandate Content をユーザに提示して生体認証等で同意を取得、user_sk で L2 に署名した後、**L1+L2 をセットで SA へ渡す** |
+| Credential Provider との違い | CP は"決済手段（Payment Credential）"を管理する別ロール。CP が "digital wallet" として実装されうるが、L1 の保管・管理は TS が担い、Trusted Surface とは別 |
 
 **結論**: Trusted Surface は "Identity Wallet" とは明示されていない。シーケンス図から読み取れるように「ユーザ認証 UI + Mandate 署名」を担うコンポーネントであり、実装としてスタンドアロンウォレット（Identity Wallet に近い形）も許容されるが、規範的な名称は "Trusted Surface"。
 
@@ -518,7 +520,7 @@ L2 は「Immediate モード（有効期限 ~15 分）」と「Autonomous モー
 
 | モデル | 概要 | 使用場面 |
 |---|---|---|
-| **User Credential Model** | 第三者 Issuer（Credential Provider）がユーザ身元と公開鍵をバインドした L1 SD-JWT を発行。Trusted Surface とVerifier は共通の Issuer を信頼する。 | 1つの Credential で複数エージェントを認可したい場合 |
+| **User Credential Model** | 第三者 **Issuer**（CP とは別エンティティ）がユーザ身元と公開鍵をバインドした L1 SD-JWT を発行し **Trusted Surface に provisioning**。TS がユーザ承認後に L1+L2 を SA へ渡す。Verifier は共通の Issuer を信頼する。 | 1つの Credential で複数エージェントを認可したい場合 |
 | **Trusted Agent Provider Model** | Agent Provider が認可を管理。Verifier は各 Provider を個別に信頼する。 | シンプルな 1:1 信頼関係 |
 
 User Credential はこの「User Credential Model」の核心要素であり、**エージェントが複数存在する環境でユーザ身元の一元管理を実現**するために導入されたと推察される。具体的な追加経緯（Issue/PR）は CHANGELOG や公開 Issue から特定できず、設計当初（v0.1.0 以前）から組み込まれていた可能性が高い。
