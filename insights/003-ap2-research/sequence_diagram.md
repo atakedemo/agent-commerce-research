@@ -1,5 +1,14 @@
 # シーケンス図
 
+> **公式参照画像（AP2リポジトリ `docs/assets/`）**
+>
+> | フロー | 全体図 | ショッピングフェーズ | 決済フェーズ |
+> |---|---|---|---|
+> | Human Present | [ap2_hp_flow.svg](https://raw.githubusercontent.com/google-agentic-commerce/AP2/main/docs/assets/ap2_hp_flow.svg) | [ap2_hp_shopping.svg](https://raw.githubusercontent.com/google-agentic-commerce/AP2/main/docs/assets/ap2_hp_shopping.svg) | [ap2_hp_payment.svg](https://raw.githubusercontent.com/google-agentic-commerce/AP2/main/docs/assets/ap2_hp_payment.svg) |
+> | Human Not Present | [ap2_hnp_flow.svg](https://raw.githubusercontent.com/google-agentic-commerce/AP2/main/docs/assets/ap2_hnp_flow.svg) | [ap2_hnp_shopping.svg](https://raw.githubusercontent.com/google-agentic-commerce/AP2/main/docs/assets/ap2_hnp_shopping.svg) | [ap2_hnp_payment.svg](https://raw.githubusercontent.com/google-agentic-commerce/AP2/main/docs/assets/ap2_hnp_payment.svg) |
+>
+> **公式画像との整合性**: 本 Mermaid 図は `docs/ap2/flows.md` の記述と照合済み。全体的に一致。HNP の Phase 1a（HP 期）と Phase 1b（HNP 期）を公式は分割表示するが、本図では `Note` + `rect` で区切る形で統合している。
+
 ## Human Present フロー
 
 ユーザが各ステップで承認に直接関与する標準購買フロー。
