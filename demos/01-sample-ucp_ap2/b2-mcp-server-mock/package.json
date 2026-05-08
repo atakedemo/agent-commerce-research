@@ -1,0 +1,17 @@
+{
+  "name": "@ucp-research/ucp-mcp-server-mock",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "In-memory mock MCP server (archived snapshot of b-mcp-server before Medusa integration).",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.76"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

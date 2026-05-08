@@ -1,0 +1,19 @@
+{
+  "name": "@ucp-research/conformance-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP tool conformance tests for b-mcp-server. Covers all tools listed in docs/mcp-reference.md.",
+  "scripts": {
+    "test": "node --test --test-reporter=spec *.test.js",
+    "test:checkout": "node --test --test-reporter=spec checkout.test.js",
+    "test:catalog": "node --test --test-reporter=spec catalog.test.js",
+    "test:cart": "node --test --test-reporter=spec cart.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

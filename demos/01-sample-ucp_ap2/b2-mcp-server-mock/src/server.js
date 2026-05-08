@@ -3,14 +3,7 @@
  * MCP server exposing UCP Shopping tools aligned with
  * Universal-Commerce-Protocol/ucp — source/services/shopping/mcp.openrpc.json
  *
- * Implements all 12 tools with a two-layer strategy:
- *   1. Medusa Store API (when EC_BACKEND_URL + EC_PUBLISHABLE_KEY are set)
- *   2. In-memory mock (fallback when Medusa is unavailable or unconfigured)
- *
- * State tracking (cart status, checkout lifecycle) is always maintained
- * in-memory, as Medusa has no direct cancel_cart / cancel_checkout equivalent.
- *
- * Tools:
+ * Implements all 12 tools (mock in-memory):
  *   catalog : search_catalog / get_product / lookup_catalog
  *   cart    : create_cart / get_cart / update_cart / cancel_cart
  *   checkout: create_checkout / get_checkout / update_checkout /
@@ -20,7 +13,6 @@ import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import * as medusa from "./medusa.js";
 
 // ─── Schema helpers ────────────────────────────────────────────────────────────
 
@@ -46,7 +38,7 @@ const carts = new Map();
 const CATALOG = [
   {
     id: "prod_abc123",
-    title: "MOCK_Blue Running Shoes",
+    title: "Blue Running Shoes",
     categories: ["Footwear"],
     options: [
       { name: "Color", values: [{ label: "Blue", available: true }] },
@@ -55,7 +47,7 @@ const CATALOG = [
     variants: [
       {
         id: "var_abc123_blu_10",
-        price: { amount: 12000, currency: "USD" },
+        price: { amount: 12.00, currency: "USD" },
         availability: { available: true },
         options: [{ name: "Color", label: "Blue" }, { name: "Size", label: "10" }],
       },
@@ -63,7 +55,7 @@ const CATALOG = [
   },
   {
     id: "prod_def456",
-    title: "MOCK_Red Style Shirt",
+    title: "Red Style Shirt",
     categories: ["Clothing"],
     options: [
       { name: "Color", values: [{ label: "Red", available: true }] },
@@ -78,7 +70,7 @@ const CATALOG = [
     variants: [
       {
         id: "var_def456_red_m",
-        price: { amount: 8000, currency: "USD" },
+        price: { amount: 8.99, currency: "USD" },
         availability: { available: true },
         options: [{ name: "Color", label: "Red" }, { name: "Size", label: "M" }],
       },
@@ -92,7 +84,7 @@ const CATALOG = [
   },
   {
     id: "prod_ghi789",
-    title: "MOCK_White Running Shoes",
+    title: "White Running Shoes",
     categories: ["Footwear"],
     options: [
       { name: "Color", values: [{ label: "White", available: true }] },
@@ -101,7 +93,7 @@ const CATALOG = [
     variants: [
       {
         id: "var_ghi789_wht_9",
-        price: { amount: 9000, currency: "USD" },
+        price: { amount: 9.99, currency: "USD" },
         availability: { available: true },
         options: [{ name: "Color", label: "White" }, { name: "Size", label: "9" }],
       },
@@ -109,7 +101,7 @@ const CATALOG = [
   },
 ];
 
-// ─── Catalog helpers (mock) ────────────────────────────────────────────────────
+// ─── Catalog helpers ───────────────────────────────────────────────────────────
 
 const UCP_CATALOG_SEARCH_CAP = {
   ucp: {
@@ -125,7 +117,7 @@ const UCP_CATALOG_LOOKUP_CAP = {
   },
 };
 
-function mockSearchProducts({ query, filters, pagination } = {}) {
+function searchProducts({ query, filters, pagination } = {}) {
   let results = [...CATALOG];
 
   if (query) {
@@ -158,7 +150,9 @@ function mockSearchProducts({ query, filters, pagination } = {}) {
   const page = results.slice(offset, offset + limit);
   const hasNext = offset + limit < results.length;
   const nextCursor = hasNext
-    ? Buffer.from(JSON.stringify({ offset: offset + limit })).toString("base64url")
+    ? Buffer.from(JSON.stringify({ offset: offset + limit })).toString(
+        "base64url",
+      )
     : undefined;
 
   return {
@@ -171,7 +165,7 @@ function mockSearchProducts({ query, filters, pagination } = {}) {
   };
 }
 
-// ─── Cart helpers (mock) ───────────────────────────────────────────────────────
+// ─── Cart helpers ──────────────────────────────────────────────────────────────
 
 const UCP_CART_CAP = {
   ucp: {
@@ -193,7 +187,7 @@ function computeTotals(lineItems = []) {
   ];
 }
 
-// ─── Checkout helpers ──────────────────────────────────────────────────────────
+// ─── Checkout helpers ─────────────────────────────────────────────────────────
 
 function recordForResponse(id, meta, checkoutPayload, status) {
   return {
@@ -209,20 +203,30 @@ function recordForResponse(id, meta, checkoutPayload, status) {
   };
 }
 
-// ─── Response helpers ─────────────────────────────────────────────────────────
+async function medusaCreateCart(lineItemSummary) {
+  const base = process.env.EC_BACKEND_URL?.replace(/\/$/, "");
+  const pk = process.env.EC_PUBLISHABLE_KEY;
+  if (!base || !pk) return null;
 
-function ok(data) {
-  return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
-}
-
-function err(data) {
-  return { isError: true, content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  const res = await fetch(`${base}/store/carts`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-publishable-api-key": pk,
+    },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    return { medusa_error: await res.text(), status: res.status };
+  }
+  const data = await res.json();
+  return { cart: data.cart, lineItemSummary };
 }
 
 // ─── MCP Server ────────────────────────────────────────────────────────────────
 
 const mcp = new McpServer(
-  { name: "ucp-shopping-mcp-bridge", version: "0.3.0" },
+  { name: "ucp-shopping-mcp-bridge", version: "0.2.0" },
   {
     instructions:
       "UCP Shopping MCP (12 tools): catalog (search_catalog, get_product, lookup_catalog), cart (create_cart, get_cart, update_cart, cancel_cart), checkout (create_checkout, get_checkout, update_checkout, complete_checkout, cancel_checkout). Requires meta.ucp-agent.profile; complete/cancel_checkout require meta.idempotency-key.",
@@ -242,11 +246,19 @@ mcp.registerTool(
     }),
   },
   async ({ catalog }) => {
-    let result;
-    try { result = await medusa.searchProducts(catalog ?? {}); } catch {}
-    if (!result) result = mockSearchProducts(catalog ?? {});
-
-    return ok({ ...UCP_CATALOG_SEARCH_CAP, ...result });
+    const result = searchProducts(catalog ?? {});
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { ...UCP_CATALOG_SEARCH_CAP, ...result },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
   },
 );
 
@@ -261,29 +273,44 @@ mcp.registerTool(
     }),
   },
   async ({ catalog }) => {
-    let product;
-    try { product = await medusa.getProduct(catalog?.id, catalog?.selected); } catch {}
-
+    const product = CATALOG.find((p) => p.id === catalog?.id);
     if (!product) {
-      const found = CATALOG.find((p) => p.id === catalog?.id);
-      if (found) {
-        let variants = [...found.variants];
-        if (catalog?.selected?.length) {
-          variants = variants.filter((v) =>
-            catalog.selected.every((sel) =>
-              v.options.some((o) => o.name === sel.name && o.label === sel.label),
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              { error: "product_not_found", id: catalog?.id },
+              null,
+              2,
             ),
-          );
-        }
-        product = { ...found, variants };
-      }
+          },
+        ],
+      };
     }
 
-    if (!product) {
-      return err({ error: "product_not_found", id: catalog?.id });
+    let variants = [...product.variants];
+    if (catalog?.selected?.length) {
+      variants = variants.filter((v) =>
+        catalog.selected.every((sel) =>
+          v.options.some((o) => o.name === sel.name && o.label === sel.label),
+        ),
+      );
     }
 
-    return ok({ ...UCP_CATALOG_LOOKUP_CAP, product });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { ...UCP_CATALOG_LOOKUP_CAP, product: { ...product, variants } },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
   },
 );
 
@@ -299,17 +326,22 @@ mcp.registerTool(
   },
   async ({ catalog }) => {
     const ids = catalog?.ids ?? [];
-    let products;
-    try { products = await medusa.lookupProducts(ids); } catch {}
-
-    if (!products) {
-      products = ids.flatMap((id) => {
-        const p = CATALOG.find((x) => x.id === id);
-        return p ? [p] : [];
-      });
-    }
-
-    return ok({ ...UCP_CATALOG_LOOKUP_CAP, products });
+    const products = ids.flatMap((id) => {
+      const p = CATALOG.find((x) => x.id === id);
+      return p ? [p] : [];
+    });
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            { ...UCP_CATALOG_LOOKUP_CAP, products },
+            null,
+            2,
+          ),
+        },
+      ],
+    };
   },
 );
 
@@ -328,22 +360,17 @@ mcp.registerTool(
   async ({ cart }) => {
     const id = `cart_${randomUUID()}`;
     const lineItems = cart?.line_items ?? [];
-
-    let medusaResult = null;
-    try { medusaResult = await medusa.createCart(lineItems); } catch {}
-
     const rec = {
       ...UCP_CART_CAP,
       id,
       status: "active",
       line_items: lineItems,
-      currency: medusaResult?.ucpCart.currency ?? "USD",
-      totals: medusaResult?.ucpCart.totals ?? computeTotals(lineItems),
-      continue_url: medusaResult?.ucpCart.continue_url ?? `https://demo.example.com/checkout?cart=${id}`,
-      ...(medusaResult ? { _medusa_id: medusaResult.medusaId } : {}),
+      currency: "USD",
+      totals: computeTotals(lineItems),
+      continue_url: `https://demo.example.com/checkout?cart=${id}`,
     };
     carts.set(id, rec);
-    return ok(rec);
+    return { content: [{ type: "text", text: JSON.stringify(rec, null, 2) }] };
   },
 );
 
@@ -358,20 +385,18 @@ mcp.registerTool(
   },
   async ({ id }) => {
     const rec = carts.get(id);
-    if (!rec) return err({ error: "cart_not_found", id });
-
-    if (rec._medusa_id) {
-      try {
-        const fresh = await medusa.getCart(rec._medusa_id);
-        if (fresh) {
-          const updated = { ...rec, line_items: fresh.line_items, totals: fresh.totals };
-          carts.set(id, updated);
-          return ok(updated);
-        }
-      } catch {}
+    if (!rec) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "cart_not_found", id }, null, 2),
+          },
+        ],
+      };
     }
-
-    return ok(rec);
+    return { content: [{ type: "text", text: JSON.stringify(rec, null, 2) }] };
   },
 );
 
@@ -388,22 +413,34 @@ mcp.registerTool(
   },
   async ({ id, cart }) => {
     const prev = carts.get(id);
-    if (!prev) return err({ error: "cart_not_found", id });
-    if (prev.status === "canceled") return err({ error: "cart_canceled", id });
-
-    const lineItems = cart?.line_items ?? [];
-    let totals = computeTotals(lineItems);
-
-    if (prev._medusa_id) {
-      try {
-        const fresh = await medusa.updateCart(prev._medusa_id, lineItems);
-        if (fresh) totals = fresh.totals;
-      } catch {}
+    if (!prev) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "cart_not_found", id }, null, 2),
+          },
+        ],
+      };
     }
-
-    const updated = { ...prev, line_items: lineItems, totals };
+    if (prev.status === "canceled") {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "cart_canceled", id }, null, 2),
+          },
+        ],
+      };
+    }
+    const lineItems = cart?.line_items ?? [];
+    const updated = { ...prev, line_items: lineItems, totals: computeTotals(lineItems) };
     carts.set(id, updated);
-    return ok(updated);
+    return {
+      content: [{ type: "text", text: JSON.stringify(updated, null, 2) }],
+    };
   },
 );
 
@@ -418,11 +455,22 @@ mcp.registerTool(
   },
   async ({ id }) => {
     const prev = carts.get(id);
-    if (!prev) return err({ error: "cart_not_found", id });
-
+    if (!prev) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "cart_not_found", id }, null, 2),
+          },
+        ],
+      };
+    }
     const canceled = { ...prev, status: "canceled" };
     carts.set(id, canceled);
-    return ok(canceled);
+    return {
+      content: [{ type: "text", text: JSON.stringify(canceled, null, 2) }],
+    };
   },
 );
 
@@ -440,14 +488,15 @@ mcp.registerTool(
   },
   async ({ meta, checkout }) => {
     const id = `co_${randomUUID()}`;
-
-    let medusaCartId = null;
-    try { medusaCartId = await medusa.createCheckoutCart(checkout); } catch {}
-
-    const rec = recordForResponse(id, meta, checkout, "incomplete");
-    if (medusaCartId) rec._medusa_cart_id = medusaCartId;
+    const mirrored = await medusaCreateCart(checkout?.line_items ?? checkout);
+    const rec = recordForResponse(
+      id,
+      meta,
+      { ...checkout, _ec_mirror: mirrored },
+      "incomplete",
+    );
     checkouts.set(id, rec);
-    return ok(rec);
+    return { content: [{ type: "text", text: JSON.stringify(rec, null, 2) }] };
   },
 );
 
@@ -462,8 +511,18 @@ mcp.registerTool(
   },
   async ({ id }) => {
     const rec = checkouts.get(id);
-    if (!rec) return err({ error: "checkout_not_found", id });
-    return ok(rec);
+    if (!rec) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "checkout_not_found", id }, null, 2),
+          },
+        ],
+      };
+    }
+    return { content: [{ type: "text", text: JSON.stringify(rec, null, 2) }] };
   },
 );
 
@@ -480,20 +539,37 @@ mcp.registerTool(
   },
   async ({ id, checkout }) => {
     const prev = checkouts.get(id);
-    if (!prev) return err({ error: "checkout_not_found", id });
-    if (prev.status === "canceled") return err({ error: "checkout_canceled", id });
-
-    if (prev._medusa_cart_id) {
-      try { await medusa.updateCheckoutCart(prev._medusa_cart_id, checkout); } catch {}
+    if (!prev) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "checkout_not_found", id }, null, 2),
+          },
+        ],
+      };
     }
-
+    if (prev.status === "canceled") {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "checkout_canceled", id }, null, 2),
+          },
+        ],
+      };
+    }
     const merged = {
       ...prev,
       checkout: { ...prev.checkout, ...checkout },
       status: prev.status === "completed" ? "completed" : "ready_for_complete",
     };
     checkouts.set(id, merged);
-    return ok(merged);
+    return {
+      content: [{ type: "text", text: JSON.stringify(merged, null, 2) }],
+    };
   },
 );
 
@@ -510,13 +586,28 @@ mcp.registerTool(
   },
   async ({ meta, id, checkout }) => {
     const prev = checkouts.get(id);
-    if (!prev) return err({ error: "checkout_not_found", id });
-    if (prev.status === "canceled") return err({ error: "checkout_canceled", id });
-
-    if (prev._medusa_cart_id) {
-      try { await medusa.completeCheckoutCart(prev._medusa_cart_id); } catch {}
+    if (!prev) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "checkout_not_found", id }, null, 2),
+          },
+        ],
+      };
     }
-
+    if (prev.status === "canceled") {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "checkout_canceled", id }, null, 2),
+          },
+        ],
+      };
+    }
     const done = {
       ...prev,
       checkout: { ...prev.checkout, ...checkout },
@@ -527,7 +618,7 @@ mcp.registerTool(
       },
     };
     checkouts.set(id, done);
-    return ok(done);
+    return { content: [{ type: "text", text: JSON.stringify(done, null, 2) }] };
   },
 );
 
@@ -543,9 +634,28 @@ mcp.registerTool(
   },
   async ({ meta, id }) => {
     const prev = checkouts.get(id);
-    if (!prev) return err({ error: "checkout_not_found", id });
-    if (prev.status === "completed") return err({ error: "checkout_completed", id });
-
+    if (!prev) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "checkout_not_found", id }, null, 2),
+          },
+        ],
+      };
+    }
+    if (prev.status === "completed") {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: "checkout_completed", id }, null, 2),
+          },
+        ],
+      };
+    }
     const canceled = {
       ...prev,
       status: "canceled",
@@ -555,7 +665,9 @@ mcp.registerTool(
       },
     };
     checkouts.set(id, canceled);
-    return ok(canceled);
+    return {
+      content: [{ type: "text", text: JSON.stringify(canceled, null, 2) }],
+    };
   },
 );
 

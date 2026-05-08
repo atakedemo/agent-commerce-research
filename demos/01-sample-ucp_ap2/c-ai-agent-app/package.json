@@ -1,0 +1,19 @@
+{
+  "name": "@ucp-research/c-ai-agent-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mock AI agent frontend for UCP Shopping end-to-end verification (b-mcp-server).",
+  "scripts": {
+    "start": "node --env-file=.env src/server.js",
+    "demo": "node --env-file=.env src/demo.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^4.21.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -10,7 +10,7 @@
 - **カート（規格・追加含む）**: [cart.md](../../../references/specification/community/ucp/docs/specification/cart.md)、[cart-rest.md](../../../references/specification/community/ucp/docs/specification/cart-rest.md)、[cart-mcp.md](../../../references/specification/community/ucp/docs/specification/cart-mcp.md)。**「カートへ追加」**は `create_cart` 時の `line_items`、または [Update Cart](../../../references/specification/community/ucp/docs/specification/cart.md#update-cart) のとおり `get_cart` で現状態を取得 → 行をマージ → `update_cart` でカート全体を置換（差分 PATCH ではない）。
 - **トランスポート**: MCP（JSON-RPC over stdio）。クライアントの MCP 設定で `node .../b-mcp-server/src/server.js` 等を指定する。
 - **状態**: チェックアウトはプロセス内メモリ保持。プロセス再起動で失われる。
-- **既存 EC との連携**: 環境変数 `EC_BACKEND_URL`（例: `http://localhost:9000`）と `EC_PUBLISHABLE_KEY`（`pk_...`）が両方あるとき、`create_checkout` 実行中に `[api-reference.md](api-reference.md)` の **3. ストア（Store）API** にある `POST` `/store/carts` と同等の呼び出しを試行し、応答を `checkout._ec_mirror` に格納する（空カート作成のみ。明細映射は未実装）。
+- **既存 EC との連携**: 環境変数 `EC_BACKEND_URL`（例: `http://localhost:9000`）と `EC_PUBLISHABLE_KEY`（`pk_...`）が設定されている場合、全 12 Tool が **Medusa Store API 優先・インメモリモックフォールバック**の二層方式で動作する。`b-mcp-server/src/medusa.js` が API クライアント層を担い、Medusa 非接続時（未設定・エラー）は自動的にインメモリモックへ切り替わる。モックのみで動作させる場合は `b2-mcp-server-mock/`（Medusa 連携前のスナップショット）を参照。
 
 ---
 
@@ -428,7 +428,7 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | 説明                        | 新規チェックアウトセッションを作成する（OpenRPC: `create_checkout`）。                                                                     |
 | 入力                        | `meta`（上表）、`checkout`（オブジェクト。キー構造は規格スキーマに準拠して拡張。実装は `z.record` で緩い）                                                  |
-| 応答                        | `id`（`co_<uuid>` 形式）、`status`（初期は `incomplete`）、`ucp_meta`、`checkout`（Medusa 連携時は `_ec_mirror` を含みうる）                |
+| 応答                        | `id`（`co_<uuid>` 形式）、`status`（初期は `incomplete`）、`ucp_meta`、`checkout`（入力の `checkout` をそのまま格納。Medusa 連携時は内部で Medusa カートも作成）                |
 | **api-reference.md との対応** | **§3** `POST /store/carts` を中核。前段として **§3** `GET /store/regions`（`region_id`）や **§3** `GET /store/products` 等を参照しうる。 |
 
 
@@ -448,7 +448,7 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
 }
 ```
 
-**レスポンス例**（成功・Medusa 未連携時。`checkout._ec_mirror` は `null`）
+**レスポンス例**（成功時）
 
 ```json
 {
@@ -461,13 +461,10 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
     "idempotency-key": "11111111-1111-4111-8111-111111111111"
   },
   "checkout": {
-    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }],
-    "_ec_mirror": null
+    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }]
   }
 }
 ```
-
-`EC_BACKEND_URL` と `EC_PUBLISHABLE_KEY` が有効な場合、`checkout._ec_mirror` に `{ "cart": { ... }, "lineItemSummary": ... }` または `{ "medusa_error": "...", "status": 400 }` が入る。
 
 ---
 
@@ -507,8 +504,7 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
     }
   },
   "checkout": {
-    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }],
-    "_ec_mirror": null
+    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }]
   }
 }
 ```
@@ -572,7 +568,6 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
   },
   "checkout": {
     "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }],
-    "_ec_mirror": null,
     "email": "shopper@example.com",
     "shipping_address": {
       "first_name": "A",
@@ -641,7 +636,6 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
   },
   "checkout": {
     "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }],
-    "_ec_mirror": null,
     "email": "shopper@example.com",
     "payment_reference": "demo_pending"
   }
@@ -699,8 +693,7 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
     "idempotency-key": "33333333-3333-4333-8333-333333333333"
   },
   "checkout": {
-    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }],
-    "_ec_mirror": null
+    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }]
   }
 }
 ```
@@ -718,17 +711,22 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
 
 ## 14. 起動例（開発用）
 
+**Medusa 連携モード**（`EC_BACKEND_URL` + `EC_PUBLISHABLE_KEY` を設定すると全 12 Tool が Medusa 優先・モックフォールバックで動作）
+
 ```bash
 cd b-mcp-server
 npm install
+export EC_BACKEND_URL=http://localhost:9000
+export EC_PUBLISHABLE_KEY=pk_...
 npm start
 ```
 
-任意: Medusa と疎通させる場合。
+**モックのみモード**（Medusa 不要。Medusa 連携前のスナップショット）
 
 ```bash
-export EC_BACKEND_URL=http://localhost:9000
-export EC_PUBLISHABLE_KEY=pk_...
+cd b2-mcp-server-mock
+npm install
+npm start
 ```
 
 ---
@@ -736,6 +734,6 @@ export EC_PUBLISHABLE_KEY=pk_...
 ## 補足
 
 - **MCP Tool と Medusa Store HTTP の対応**は **§2**（一覧）および、各 Tool 節（カタログ・カート **§3〜§8**、チェックアウト **§9〜§13**）の **api-reference.md との対応**行を参照。
-- 機械可読なメソッド定義は `references/ucp-shopping-mcp.openrpc.json`（および UCP 本家 OpenRPC）を正とする。**規格にはカタログ・カート・チェックアウトが同一 OpenRPC に含まれる**が、本デモの実行コードは **チェックアウト系 5 Tool のみ**実装。
+- 機械可読なメソッド定義は `references/ucp-shopping-mcp.openrpc.json`（および UCP 本家 OpenRPC）を正とする。**規格にはカタログ・カート・チェックアウトが同一 OpenRPC に含まれる**。本デモの実行コード（`b-mcp-server`）は **カタログ・カート・チェックアウト 計 12 Tool** をすべて実装し、Medusa 連携とインメモリモックの二層方式で動作する。
 - シーケンス・単一 MCP endpoint の前提は `[sequence.md](sequence.md)` を参照。カタログ・カート系 Tool の **項目表・arguments/responses 例**は本書 **§3〜§8**、チェックアウト系は **§9〜§13**。
 
