@@ -9,8 +9,8 @@ sequenceDiagram
     actor User
     participant TS as Trusted Surface
     participant SA as Shopping Agent
-    participant CP as Credential Provider
     participant MA as Merchant
+    participant CP as Credential Provider
     participant MPP as Merchant Payment Processor
     participant NW as Network
 
@@ -62,8 +62,8 @@ sequenceDiagram
     actor User
     participant TS as Trusted Surface
     participant SA as Shopping Agent
-    participant CP as Credential Provider
     participant MA as Merchant
+    participant CP as Credential Provider
     participant MPP as Merchant Payment Processor
     participant NW as Network
 
