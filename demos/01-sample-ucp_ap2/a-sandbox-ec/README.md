@@ -7,152 +7,280 @@
     </picture>
   </a>
 </p>
-<h1 align="center">
-  Medusa DTC Starter
-</h1>
+<h1 align="center">Medusa DTC Starter（サンドボックス EC）</h1>
 
-<h4 align="center">
-  <a href="https://docs.medusajs.com">Documentation</a> |
-  <a href="https://www.medusajs.com">Website</a>
-</h4>
+Medusa v2 + Next.js 15 で構成された EC サイトのサンドボックス環境。
+UCP / AP2 のデモ用途として、Stripe 決済を組み込んだ状態で提供しています。
 
-<p align="center">
-  Building blocks for digital commerce
-</p>
-<p align="center">
-  <a href="https://github.com/medusajs/medusa/blob/develop/LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="Medusa is released under the MIT license." />
-  </a>
-  <a href="https://circleci.com/gh/medusajs/medusa">
-    <img src="https://circleci.com/gh/medusajs/medusa.svg?style=shield" alt="Current CircleCI build status." />
-  </a>
-  <a href="https://github.com/medusajs/medusa/blob/develop/CONTRIBUTING.md">
-    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat" alt="PRs welcome!" />
-  </a>
-    <a href="https://www.producthunt.com/posts/medusa"><img src="https://img.shields.io/badge/Product%20Hunt-%231%20Product%20of%20the%20Day-%23DA552E" alt="Product Hunt"></a>
-  <a href="https://discord.gg/xpCwq3Kfn8">
-    <img src="https://img.shields.io/badge/chat-on%20discord-7289DA.svg" alt="Discord Chat" />
-  </a>
-  <a href="https://twitter.com/intent/follow?screen_name=medusajs">
-    <img src="https://img.shields.io/twitter/follow/medusajs.svg?label=Follow%20@medusajs" alt="Follow @medusajs" />
-  </a>
-</p>
+---
 
-# Medusa DTC Starter
+## 構成
 
-A production-ready monorepo starter for direct-to-consumer ecommerce stores powered by Medusa and Next.js. Includes a fully featured storefront with product browsing, cart, checkout, customer accounts, and order management.
+| レイヤー | 技術 | URL |
+|---|---|---|
+| バックエンド（API / Admin） | Medusa v2 | `http://localhost:9000` |
+| ストアフロント | Next.js 15 | `http://localhost:8000` |
+| Admin ダッシュボード | Medusa Admin | `http://localhost:9000/app` |
+| データベース | PostgreSQL | `localhost:5432` |
+| キャッシュ | Redis | `localhost:6379` |
 
-## Features
+---
 
-- All of [Medusa's commerce features](https://docs.medusajs.com/resources/commerce-modules)
-- Multi-region support with automatic country detection
-- Product catalog with variant selection
-- Cart with promotion codes
-- Multi-step checkout with shipping and payment
-- Customer accounts with order history and address management
-- Order transfer between accounts
+## 前提条件
 
-## Getting Started
+- **Node.js** v20 以上
+- **npm** v10 以上
+- **PostgreSQL** v15 以上（ローカル起動済み）
+- **Redis** v7 以上（ローカル起動済み）
 
-### Deploy with Medusa Cloud
+---
 
-The fastest way to get started is deploying with [Medusa Cloud](https://cloud.medusajs.com):
+## 1. PostgreSQL の準備
 
-1. [Create a Medusa Cloud account](https://cloud.medusajs.com)
-2. Deploy this starter directly from your dashboard
-
-### Local Installation
-
-> **Prerequisites:
->
-> - [Node.js](https://nodejs.org/) v20+
-> - [PostgreSQL](https://www.postgresql.org/) v15+
-> - [pnpm](https://pnpm.io/) v10+
-
-1. Clone the repository and install dependencies:
+### 起動確認
 
 ```bash
-git clone https://github.com/medusajs/dtc-starter.git
-cd dtc-starter
-pnpm install
+# macOS（Homebrew）の場合
+brew services start postgresql@15
+
+# 起動状態を確認
+brew services list | grep postgresql
 ```
 
-2. Set up environment variables for the backend:
+### データベース作成
 
 ```bash
-cp apps/backend/.env.template apps/backend/.env
+# PostgreSQL に接続
+psql postgres
+
+# データベースを作成（接続ユーザー名を確認してから実行）
+CREATE DATABASE "medusa-a-sandbox-ec-2";
+
+# 作成確認
+\l
+
+# 終了
+\q
 ```
 
-3. Set the database URL in `apps/backend.env`:
+### 接続確認
 
 ```bash
-# Replace with actual database URL, make sure the database exists.
-DATABASE_URL=postgres://postgres:@localhost:5432/medusa-dtc-starter
+psql postgres://$(whoami)@localhost/medusa-a-sandbox-ec-2 -c "SELECT 1;"
 ```
 
-4. Run migrations:
+`1` が返れば接続成功です。
+
+---
+
+## 2. Redis の準備
+
+```bash
+# macOS（Homebrew）の場合
+brew services start redis
+
+# 起動確認
+redis-cli ping
+# → PONG が返れば OK
+```
+
+---
+
+## 3. 依存パッケージのインストール
+
+```bash
+# リポジトリルート（a-sandbox-ec/）で実行
+npm install
+```
+
+---
+
+## 4. 環境変数の設定
+
+### バックエンド（`apps/backend/.env`）
+
+ファイルが存在しない場合は作成してください。
+
+```bash
+MEDUSA_ADMIN_ONBOARDING_TYPE=nextjs
+STORE_CORS=http://localhost:8000,https://docs.medusajs.com
+ADMIN_CORS=http://localhost:5173,http://localhost:9000,https://docs.medusajs.com
+AUTH_CORS=http://localhost:5173,http://localhost:9000,http://localhost:8000,https://docs.medusajs.com
+REDIS_URL=redis://localhost:6379
+JWT_SECRET=supersecret
+COOKIE_SECRET=supersecret
+DATABASE_URL=postgres://<あなたのOSユーザー名>@localhost/medusa-a-sandbox-ec-2
+MEDUSA_ADMIN_ONBOARDING_NEXTJS_DIRECTORY=a-sandbox-ec/apps/storefront
+
+# Stripe（後述）
+STRIPE_API_KEY=sk_test_xxxx
+STRIPE_WEBHOOK_SECRET=whsec_xxxx
+```
+
+> `DATABASE_URL` の `<あなたのOSユーザー名>` は `whoami` コマンドで確認できます。
+
+### ストアフロント（`apps/storefront/.env.local`）
+
+```bash
+NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=<Admin で取得した公開 API キー>
+NEXT_PUBLIC_MEDUSA_BACKEND_URL=http://localhost:9000
+NEXT_PUBLIC_DEFAULT_REGION=dk
+NEXT_PUBLIC_BASE_URL=https://localhost:8000
+NEXT_PUBLIC_STRIPE_KEY=pk_test_xxxx   # Stripe 公開キー（後述）
+NODE_ENV=development
+```
+
+---
+
+## 5. データベースマイグレーション
 
 ```bash
 cd apps/backend
-pnpm medusa db:migrate
+npm run build
+npx medusa db:migrate
 ```
 
-5. Add admin user:
+---
+
+## 6. バックエンドの起動
+
+```bash
+# a-sandbox-ec/ ルートで実行
+npm run dev
+
+# または、バックエンドのみ起動
+cd apps/backend
+npm run dev
+```
+
+バックエンドが起動したら `http://localhost:9000/health` にアクセスして `{"status":"ok"}` が返ることを確認してください。
+
+---
+
+## 7. Admin アカウントの作成
+
+バックエンド起動後、以下のコマンドで管理者ユーザーを作成します。
 
 ```bash
 cd apps/backend
-pnpm medusa user -e admin@test.com -p supersecret
+npx medusa user -e admin@example.com -p yourpassword
 ```
 
-6. Start Medusa backend:
+> メールアドレスとパスワードは任意の値を設定してください。
 
-```bash
-cd apps/backend
-pnpm dev
-```
+作成後、`http://localhost:9000/app` にアクセスし、設定したメールアドレスとパスワードでログインできます。
 
-7. Open the admin dashboard at `localhost:9000/app` and log in. Retrieve your publishable API key at Settings > Publishable API key.
+---
 
-8. Set up environment variables for the storefront:
+## 8. Medusa 公開 API キーの取得
 
-```bash
-cp apps/storefront/.env.template apps/storefront/.env.local
-```
+1. `http://localhost:9000/app` に Admin ログイン
+2. **Settings** → **Publishable API Keys**
+3. 既存のキーをコピー、または「Create」で新規作成
+4. 取得した `pk_...` の値を `apps/storefront/.env.local` の `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` に設定
 
-9. Update `apps/storefront/.env.local` with your Medusa publishable API key:
+---
 
-```bash
-NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY=pk_6c3...
-```
-
-10.  Start storefront:
+## 9. ストアフロントの起動
 
 ```bash
 cd apps/storefront
-pnpm dev
+npm run dev
 ```
 
-The storefront runs on `http://localhost:8000`.
+`http://localhost:8000` でストアフロントが起動します。
 
-You can slo run the following command from the root to start both backend and storefront:
+---
 
-```bash
-pnpm dev
-```
+## 10. Stripe 決済の設定
 
-## Configuration
+### 必要なキーの取得
 
-The storefront is configured via environment variables in `apps/storefront/.env.local`:
+[Stripe ダッシュボード（テストモード）](https://dashboard.stripe.com/test/apikeys) から以下を取得してください。
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` | Publishable API key from your Medusa backend | — |
-| `NEXT_PUBLIC_MEDUSA_BACKEND_URL` | URL of your Medusa backend | `http://localhost:9000` |
-| `NEXT_PUBLIC_DEFAULT_REGION` | Default region country code | `dk` |
-| `NEXT_PUBLIC_BASE_URL` | Base URL of the storefront | `https://localhost:8000` |
-| `NEXT_PUBLIC_STRIPE_KEY` | Stripe publishable key (optional) | — |
+| キー | 設定ファイル | 変数名 |
+|---|---|---|
+| シークレットキー（`sk_test_...`） | `apps/backend/.env` | `STRIPE_API_KEY` |
+| 公開キー（`pk_test_...`） | `apps/storefront/.env.local` | `NEXT_PUBLIC_STRIPE_KEY` |
 
-## Resources
+### Admin でリージョンに Stripe を有効化
 
-- [Medusa Documentation](https://docs.medusajs.com)
-- [Medusa Cloud](https://cloud.medusajs.com)
+1. `http://localhost:9000/app` → **Settings** → **Regions**
+2. 対象リージョン（例: Europe）を選択
+3. **Payment Providers** → `stripe` を有効化して保存
+
+### Webhook の設定（本番環境のみ）
+
+ローカル開発では Webhook 設定は不要です。本番環境にデプロイする場合は以下を設定してください。
+
+- **エンドポイント URL**: `https://<your-domain>/hooks/payment/stripe_stripe`
+- **リッスンするイベント**:
+  - `payment_intent.succeeded`
+  - `payment_intent.payment_failed`
+  - `payment_intent.amount_capturable_updated`
+  - `payment_intent.partially_funded`
+- 発行された `whsec_...` を `apps/backend/.env` の `STRIPE_WEBHOOK_SECRET` に設定
+
+### 動作確認（テストカード）
+
+チェックアウト画面で以下のテストカード情報を使用してください。
+
+| 項目 | 値 |
+|---|---|
+| カード番号 | `4242 4242 4242 4242` |
+| 有効期限 | 任意の未来日（例: `12/34`） |
+| CVC | 任意の3桁（例: `123`） |
+
+---
+
+## 環境変数リファレンス
+
+### バックエンド（`apps/backend/.env`）
+
+| 変数名 | 説明 |
+|---|---|
+| `DATABASE_URL` | PostgreSQL 接続 URL |
+| `REDIS_URL` | Redis 接続 URL |
+| `JWT_SECRET` | JWT 署名シークレット |
+| `COOKIE_SECRET` | Cookie 署名シークレット |
+| `STRIPE_API_KEY` | Stripe シークレットキー（`sk_test_...`） |
+| `STRIPE_WEBHOOK_SECRET` | Stripe Webhook 署名シークレット（`whsec_...`） |
+
+### ストアフロント（`apps/storefront/.env.local`）
+
+| 変数名 | 説明 |
+|---|---|
+| `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` | Medusa Admin で発行した公開 API キー |
+| `NEXT_PUBLIC_MEDUSA_BACKEND_URL` | Medusa バックエンド URL（デフォルト: `http://localhost:9000`） |
+| `NEXT_PUBLIC_DEFAULT_REGION` | デフォルトリージョンのカントリーコード（例: `dk`） |
+| `NEXT_PUBLIC_BASE_URL` | ストアフロントのベース URL |
+| `NEXT_PUBLIC_STRIPE_KEY` | Stripe 公開キー（`pk_test_...`） |
+
+---
+
+## トラブルシューティング
+
+### バックエンドが起動しない
+
+- PostgreSQL・Redis が起動しているか確認: `brew services list`
+- `DATABASE_URL` のユーザー名を確認: `whoami`
+- マイグレーションが完了しているか確認: `npx medusa db:migrate`
+
+### Admin にログインできない
+
+- 管理者ユーザーを作成したか確認（手順 7 参照）
+- バックエンドが起動中か確認: `curl http://localhost:9000/health`
+
+### Stripe の決済ボタンが表示されない
+
+- Admin でリージョンに Stripe を有効化しているか確認（手順 10 参照）
+- `NEXT_PUBLIC_STRIPE_KEY` に正しい公開キーが設定されているか確認
+- ストアフロントを再起動（環境変数変更後は再起動が必要）
+
+---
+
+## 参考リンク
+
+- [Medusa ドキュメント](https://docs.medusajs.com)
+- [Stripe 決済モジュール（バックエンド）](https://docs.medusajs.com/resources/commerce-modules/payment/payment-provider/stripe)
+- [Stripe 決済実装（ストアフロント）](https://docs.medusajs.com/resources/storefront-development/checkout/payment/stripe)
