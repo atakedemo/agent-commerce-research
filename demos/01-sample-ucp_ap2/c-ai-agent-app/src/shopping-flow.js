@@ -1,11 +1,35 @@
 /**
  * UCP Shopping full-flow demo:
  *   search_catalog → get_product → create_cart → create_checkout
- *   → update_checkout → complete_checkout
+ *   → [決済トークン発行 via Payment Handler] → update_checkout → complete_checkout
  *
  * Returns an array of structured step objects for display.
  */
 import { callTool, UCP_META, metaWithKey } from "./mcp-client.js";
+
+const PAYMENT_HANDLER_URL = process.env.PAYMENT_HANDLER_URL?.replace(/\/$/, "") ?? null;
+
+/**
+ * Calls the Payment Handler /tokenize endpoint with a test payment method.
+ * In mock mode (no Stripe key on the handler side), returns a pi_mock_* token.
+ */
+async function requestPaymentToken(checkoutId, amount = 1000, currency = "jpy") {
+  const res = await fetch(`${PAYMENT_HANDLER_URL}/tokenize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      credential: { payment_method_id: "pm_card_visa" },
+      binding: { checkout_id: checkoutId },
+      amount,
+      currency,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`tokenize ${res.status}: ${text}`);
+  }
+  return res.json(); // { token, expiry, _mock? }
+}
 
 export async function runShoppingFlow(client) {
   const steps = [];
@@ -75,8 +99,24 @@ export async function runShoppingFlow(client) {
 
   const checkout = s4.data;
 
-  // ── Step 5: Update checkout (shipping info) ─────────────────────────────────
-  const s5 = record(
+  // ── Step 5: 決済トークン発行 (Payment Handler) ──────────────────────────────
+  // create_checkout レスポンスに payment_handlers が含まれる場合に実行する
+  let paymentToken = null;
+  if (PAYMENT_HANDLER_URL && checkout.checkout?.payment_handlers) {
+    const tokenResult = await (async () => {
+      try {
+        const result = await requestPaymentToken(checkout.id);
+        return { isError: false, data: result };
+      } catch (e) {
+        return { isError: true, data: { error: e.message } };
+      }
+    })();
+    const s5 = record("決済トークンを発行", "POST /tokenize", tokenResult);
+    if (!s5.isError) paymentToken = s5.data.token;
+  }
+
+  // ── Step 6: Update checkout (shipping info) ─────────────────────────────────
+  const s6 = record(
     "配送情報を入力",
     "update_checkout",
     await callTool(client, "update_checkout", {
@@ -95,16 +135,30 @@ export async function runShoppingFlow(client) {
       },
     }),
   );
-  if (s5.isError) return steps;
+  if (s6.isError) return steps;
 
-  // ── Step 6: Complete checkout ───────────────────────────────────────────────
+  // ── Step 7: Complete checkout ───────────────────────────────────────────────
+  const completePayload = paymentToken
+    ? {
+        payment: {
+          instruments: [{
+            type: "card",
+            credential: { token: paymentToken },
+            display: { brand: "Visa", last4: "4242" },
+          }],
+        },
+      }
+    : { payment_reference: "demo_payment_ok" };
+
   record(
-    "注文を確定（デモ決済）",
+    paymentToken
+      ? "注文を確定（Payment Handler トークン決済）"
+      : "注文を確定（デモ決済）",
     "complete_checkout",
     await callTool(client, "complete_checkout", {
       meta: metaWithKey(),
       id: checkout.id,
-      checkout: { payment_reference: "demo_payment_ok" },
+      checkout: completePayload,
     }),
   );
 

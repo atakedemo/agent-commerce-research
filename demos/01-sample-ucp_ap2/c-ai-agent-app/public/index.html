@@ -216,20 +216,27 @@
 
     .chat-input-row {
       display: flex;
+      align-items: flex-end;
       gap: 0.5rem;
       padding: 0.75rem;
       border-top: 1px solid var(--border);
     }
-    .chat-input-row input {
+    .chat-input-row textarea {
       flex: 1;
       padding: 0.55rem 0.75rem;
       border: 1px solid var(--border);
       border-radius: 6px;
       font-size: 0.875rem;
+      font-family: inherit;
       outline: none;
+      resize: none;
+      line-height: 1.5;
+      min-height: 2.25rem;
+      max-height: 120px;
+      overflow-y: auto;
     }
-    .chat-input-row input:focus { border-color: var(--accent); }
-    .chat-input-row input:disabled { background: var(--bg); }
+    .chat-input-row textarea:focus { border-color: var(--accent); }
+    .chat-input-row textarea:disabled { background: var(--bg); }
     .send-btn {
       background: var(--accent);
       color: #fff;
@@ -260,6 +267,158 @@
       transition: background 0.15s;
     }
     .chip:hover { background: var(--bg); }
+
+    /* ── Payment Modal ── */
+    #payment-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .payment-modal {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.75rem;
+      max-width: 400px;
+      width: calc(100% - 2rem);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+    .modal-header h3 { font-size: 1rem; font-weight: 700; }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 0.2rem 0.4rem;
+      line-height: 1;
+      border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+    .modal-desc {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      line-height: 1.6;
+    }
+    .modal-send-btn {
+      display: block;
+      width: 100%;
+      margin-top: 1rem;
+      background: var(--green);
+      color: #fff;
+      border: none;
+      padding: 0.65rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .modal-send-btn:hover { opacity: 0.88; }
+
+    /* ── Payment Handler badge ── */
+    .ph-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.7rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+      font-weight: 500;
+    }
+    .ph-badge.on  { background: rgba(46,158,91,0.12); color: #1a6b3a; border: 1px solid rgba(46,158,91,0.3); }
+    .ph-badge.off { background: rgba(120,120,120,0.08); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Card form ── */
+    .card-form-section {
+      margin-top: 2rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    .card-form-section h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .card-form-section .sub-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      line-height: 1.6;
+    }
+    .card-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .form-row { display: flex; gap: 1rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+    .form-group label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .form-group input {
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-family: "Courier New", monospace;
+      outline: none;
+      transition: border-color 0.15s;
+      background: var(--bg);
+    }
+    .form-group input:focus { border-color: var(--accent); background: #fff; }
+    .tokenize-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.65rem 1.75rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      align-self: flex-start;
+    }
+    .tokenize-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .token-result {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      display: none;
+    }
+    .token-result.ok  { background: rgba(46,158,91,0.08); border: 1px solid rgba(46,158,91,0.25); color: #1a6b3a; }
+    .token-result.err { background: rgba(217,48,37,0.08); border: 1px solid rgba(217,48,37,0.25); color: var(--red); }
+    .token-result code {
+      display: block;
+      margin-top: 0.4rem;
+      font-family: monospace;
+      font-size: 0.78rem;
+      word-break: break-all;
+      background: rgba(0,0,0,0.05);
+      padding: 0.3rem 0.5rem;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -285,6 +444,10 @@
       各ステップで UCP MCP ツールを呼び出し、レスポンスを表示します。
     </p>
 
+    <div id="ph-badge" class="ph-badge off" style="display:none">
+      💳 Payment Handler 未接続（PAYMENT_HANDLER_URL 未設定）
+    </div>
+
     <div class="flow-diagram">
       <span class="node">search_catalog</span>
       <span class="arrow">→</span>
@@ -293,6 +456,8 @@
       <span class="node">create_cart</span>
       <span class="arrow">→</span>
       <span class="node">create_checkout</span>
+      <span class="arrow" id="flow-tok-arrow" style="display:none">→</span>
+      <span class="node" id="flow-tok-node" style="display:none; background:#e6ffe6; border-color:#2e9e5b; color:#1a6b3a">POST /tokenize</span>
       <span class="arrow">→</span>
       <span class="node">update_checkout</span>
       <span class="arrow">→</span>
@@ -302,6 +467,36 @@
     <button class="run-btn" id="run-btn">▶ デモを実行</button>
 
     <div id="steps" class="steps"></div>
+
+    <!-- クレジットカード入力フォーム（Payment Handler 設定時に表示） -->
+    <div id="payment-form-wrap" style="display:none">
+      <div class="card-form-section">
+        <h3>💳 クレジットカード情報を入力</h3>
+        <p class="sub-desc">
+          Payment Handler が設定されています。カード情報を入力して決済トークンを発行できます。<br>
+          デモ環境ではテストカード番号 <code style="font-size:0.78rem;background:rgba(0,0,0,0.05);padding:0 4px;border-radius:3px">4242 4242 4242 4242</code> をご利用ください。
+        </p>
+        <div class="card-form">
+          <div class="form-group">
+            <label for="card-number">カード番号</label>
+            <input id="card-number" type="text" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="card-expiry">有効期限</label>
+              <input id="card-expiry" type="text" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp" />
+            </div>
+            <div class="form-group">
+              <label for="card-cvc">セキュリティコード（CVV）</label>
+              <input id="card-cvc" type="text" placeholder="123" maxlength="4" autocomplete="cc-csc" />
+            </div>
+          </div>
+          <input type="hidden" id="form-checkout-id" />
+          <button class="tokenize-btn" id="tokenize-btn">💳 決済トークンを発行</button>
+        </div>
+        <div id="token-result" class="token-result"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ── Chat Tab ── -->
@@ -310,10 +505,46 @@
   </div>
 </main>
 
+<!-- ── Payment Modal ────────────────────────────────────────────────────────── -->
+<div id="payment-modal-overlay" style="display:none">
+  <div class="payment-modal">
+    <div class="modal-header">
+      <h3>💳 クレジットカード情報を入力</h3>
+      <button class="modal-close" id="modal-close-btn" title="閉じる">✕</button>
+    </div>
+    <p class="modal-desc">
+      チェックアウトが開始されました。決済を完了するためにカード情報を入力してください。<br>
+      デモ環境では <code style="font-size:0.75rem;background:rgba(0,0,0,0.06);padding:0 4px;border-radius:3px">4242 4242 4242 4242</code> をご利用ください。
+    </p>
+    <div class="card-form">
+      <div class="form-group">
+        <label for="modal-card-number">カード番号</label>
+        <input id="modal-card-number" type="text" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="modal-card-expiry">有効期限</label>
+          <input id="modal-card-expiry" type="text" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp" />
+        </div>
+        <div class="form-group">
+          <label for="modal-card-cvc">CVV</label>
+          <input id="modal-card-cvc" type="text" placeholder="123" maxlength="4" autocomplete="cc-csc" />
+        </div>
+      </div>
+      <input type="hidden" id="modal-checkout-id" />
+      <button class="tokenize-btn" id="modal-tokenize-btn">💳 決済トークンを発行</button>
+    </div>
+    <div id="modal-token-result" class="token-result"></div>
+    <button id="modal-send-btn" class="modal-send-btn" style="display:none">チャットに送信</button>
+  </div>
+</div>
+
 <script>
 /* ── State ──────────────────────────────────────────────────────────────────── */
 let chatHistory = [];
 let hasApiKey = false;
+let hasPaymentHandler = false;
+let lastCheckoutId = null;
 
 /* ── Init ───────────────────────────────────────────────────────────────────── */
 (async function init() {
@@ -330,27 +561,91 @@ let hasApiKey = false;
   // Demo button
   document.getElementById("run-btn").addEventListener("click", runDemo);
 
+  // Tokenize button (demo tab)
+  document.getElementById("tokenize-btn").addEventListener("click", tokenizeCard);
+
+  // Card number auto-format (groups of 4) — demo tab
+  document.getElementById("card-number").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 16);
+    this.value = v.replace(/(.{4})/g, "$1 ").trim();
+  });
+
+  // Expiry auto-slash — demo tab
+  document.getElementById("card-expiry").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+    this.value = v;
+  });
+
+  // CVV: digits only — demo tab
+  document.getElementById("card-cvc").addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 4);
+  });
+
+  // Modal events
+  document.getElementById("modal-close-btn").addEventListener("click", closePaymentModal);
+  document.getElementById("modal-tokenize-btn").addEventListener("click", modalTokenizeCard);
+  document.getElementById("modal-send-btn").addEventListener("click", modalSendToChat);
+  document.getElementById("payment-modal-overlay").addEventListener("click", function(e) {
+    if (e.target === this) closePaymentModal();
+  });
+
+  // Modal card number auto-format
+  document.getElementById("modal-card-number").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 16);
+    this.value = v.replace(/(.{4})/g, "$1 ").trim();
+  });
+
+  // Modal expiry auto-slash
+  document.getElementById("modal-card-expiry").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+    this.value = v;
+  });
+
+  // Modal CVV: digits only
+  document.getElementById("modal-card-cvc").addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 4);
+  });
+
   // Check API status
   try {
     const status = await fetch("/api/status").then(r => r.json());
     hasApiKey = status.gemini;
+    hasPaymentHandler = status.paymentHandler;
   } catch {}
 
   const badge = document.getElementById("api-badge");
   badge.textContent = hasApiKey ? "GOOGLE_AI_STUDIO_API_KEY ✅" : "GOOGLE_AI_STUDIO_API_KEY ❌";
   badge.className = "badge " + (hasApiKey ? "on" : "off");
 
+  // Payment Handler badge
+  const phBadge = document.getElementById("ph-badge");
+  phBadge.style.display = "inline-flex";
+  if (hasPaymentHandler) {
+    phBadge.className = "ph-badge on";
+    phBadge.textContent = "💳 Payment Handler 接続済み（決済トークン発行が有効）";
+    document.getElementById("flow-tok-arrow").style.display = "";
+    document.getElementById("flow-tok-node").style.display  = "";
+  } else {
+    phBadge.className = "ph-badge off";
+    phBadge.textContent = "💳 Payment Handler 未接続（PAYMENT_HANDLER_URL 未設定）";
+  }
+
   renderChatArea();
 })();
 
 /* ── Demo Flow ───────────────────────────────────────────────────────────────── */
 async function runDemo() {
-  const btn    = document.getElementById("run-btn");
+  const btn     = document.getElementById("run-btn");
   const stepsEl = document.getElementById("steps");
+  const formWrap = document.getElementById("payment-form-wrap");
 
   btn.disabled = true;
   btn.textContent = "⏳ 実行中...";
   stepsEl.innerHTML = `<div style="color:var(--muted);font-size:.875rem;padding:.5rem 0">b-mcp-server に接続中...</div>`;
+  formWrap.style.display = "none";
+  document.getElementById("token-result").style.display = "none";
 
   try {
     const res = await fetch("/api/demo", { method: "POST" });
@@ -377,6 +672,18 @@ async function runDemo() {
 
     // Open all steps
     steps.forEach((_, i) => showBody(i, true));
+
+    // Extract checkout_id from create_checkout step for the payment form
+    const checkoutStep = steps.find(s => s.tool === "create_checkout");
+    if (checkoutStep?.data?.id) {
+      lastCheckoutId = checkoutStep.data.id;
+      document.getElementById("form-checkout-id").value = lastCheckoutId;
+    }
+
+    // Show card form when Payment Handler is configured
+    if (hasPaymentHandler) {
+      formWrap.style.display = "block";
+    }
 
   } catch (err) {
     stepsEl.innerHTML = `<div style="color:var(--red)">通信エラー: ${esc(err.message)}</div>`;
@@ -426,7 +733,7 @@ function renderChatArea() {
         </div></div>
       </div>
       <div class="chat-input-row">
-        <input id="chat-in" type="text" placeholder="例：ランニングシューズを探して" />
+        <textarea id="chat-in" rows="1" placeholder="例：ランニングシューズを探して&#10;Shift+Enter で改行、Enter で送信"></textarea>
         <button class="send-btn" id="send-btn">送信</button>
       </div>
     </div>
@@ -437,15 +744,21 @@ function renderChatArea() {
       <span class="chip" onclick="fillChat(this)">カートを作って item_123 を 1 つ追加して、チェックアウトまで完了させて</span>
     </div>`;
 
+  const chatIn = document.getElementById("chat-in");
   document.getElementById("send-btn").addEventListener("click", sendChat);
-  document.getElementById("chat-in").addEventListener("keydown", e => {
-    if (e.key === "Enter") sendChat();
+  chatIn.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
   });
+  chatIn.addEventListener("input", () => autoResizeTextarea(chatIn));
 }
 
 function fillChat(chip) {
   const input = document.getElementById("chat-in");
-  if (input) { input.value = chip.textContent.trim(); input.focus(); }
+  if (input) {
+    input.value = chip.textContent.trim();
+    autoResizeTextarea(input);
+    input.focus();
+  }
 }
 
 async function sendChat() {
@@ -455,9 +768,10 @@ async function sendChat() {
   const message = input.value.trim();
   if (!message) return;
 
-  appendMsg(msgs, "user", esc(message));
-  input.value   = "";
-  input.disabled  = true;
+  appendMsg(msgs, "user", esc(message).replace(/\n/g, "<br>"));
+  input.value = "";
+  autoResizeTextarea(input);
+  input.disabled   = true;
   sendBtn.disabled = true;
 
   const loadingId = "ld-" + Date.now();
@@ -482,14 +796,22 @@ async function sendChat() {
         ? `<div class="tool-log">🔧 ${result.toolCallLog.map(t => t.tool).join(" → ")}</div>`
         : "";
       appendMsg(msgs, "bot", esc(result.text).replace(/\n/g, "<br>") + log);
+
+      // create_checkout が呼ばれ payment_handlers が返った場合、カード入力モーダルを表示
+      if (hasPaymentHandler) {
+        const checkoutCall = result.toolCallLog?.find(
+          t => t.tool === "create_checkout" && !t.isError && t.output?.checkout?.payment_handlers,
+        );
+        if (checkoutCall) openPaymentModal(checkoutCall.output.id);
+      }
     }
   } catch (err) {
     document.getElementById(loadingId)?.remove();
     appendMsg(msgs, "sys", "通信エラー: " + esc(err.message));
   } finally {
     input.disabled   = false;
-    sendBtn.disabled  = false;
-    msgs.scrollTop    = msgs.scrollHeight;
+    sendBtn.disabled = false;
+    msgs.scrollTop   = msgs.scrollHeight;
     input.focus();
   }
 }
@@ -500,6 +822,140 @@ function appendMsg(container, role, html, id) {
   if (id) div.id = id;
   div.innerHTML = `<div class="bubble">${html}</div>`;
   container.appendChild(div);
+}
+
+/* ── Textarea auto-resize ────────────────────────────────────────────────────── */
+function autoResizeTextarea(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+}
+
+/* ── Payment Modal ───────────────────────────────────────────────────────────── */
+let modalIssuedToken = null;
+let modalCheckoutId  = null;
+
+function openPaymentModal(checkoutId) {
+  modalCheckoutId  = checkoutId;
+  modalIssuedToken = null;
+  document.getElementById("modal-checkout-id").value    = checkoutId ?? "";
+  document.getElementById("modal-card-number").value    = "";
+  document.getElementById("modal-card-expiry").value    = "";
+  document.getElementById("modal-card-cvc").value       = "";
+  document.getElementById("modal-token-result").style.display = "none";
+  document.getElementById("modal-send-btn").style.display     = "none";
+  document.getElementById("payment-modal-overlay").style.display = "flex";
+  document.getElementById("modal-card-number").focus();
+}
+
+function closePaymentModal() {
+  document.getElementById("payment-modal-overlay").style.display = "none";
+}
+
+async function modalTokenizeCard() {
+  const btn      = document.getElementById("modal-tokenize-btn");
+  const resultEl = document.getElementById("modal-token-result");
+
+  const cardNumber = document.getElementById("modal-card-number").value.replace(/\s/g, "");
+  const expiry     = document.getElementById("modal-card-expiry").value;
+  const cvc        = document.getElementById("modal-card-cvc").value;
+
+  if (!cardNumber || !expiry || !cvc) {
+    showTokenResult(resultEl, false, "カード番号・有効期限・CVV をすべて入力してください。");
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = "⏳ トークン発行中...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/tokenize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: modalCheckoutId, amount: 1000, currency: "jpy" }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      showTokenResult(resultEl, false, `エラー: ${esc(data.error ?? "不明なエラー")}`);
+    } else {
+      modalIssuedToken = data.token;
+      const mockNote = data._mock ? "（モックモード）" : "";
+      showTokenResult(resultEl, true, `✅ 決済トークンを発行しました ${mockNote}`, data.token);
+      document.getElementById("modal-send-btn").style.display = "block";
+    }
+  } catch (err) {
+    showTokenResult(resultEl, false, `通信エラー: ${esc(err.message)}`);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "💳 決済トークンを発行";
+  }
+}
+
+function modalSendToChat() {
+  if (!modalIssuedToken) return;
+  const input = document.getElementById("chat-in");
+  if (input) {
+    input.value = `決済トークンが発行されました。このトークンで注文を確定してください。\ntoken: ${modalIssuedToken}`;
+    autoResizeTextarea(input);
+    input.focus();
+  }
+  closePaymentModal();
+}
+
+/* ── Payment Tokenize (demo tab) ─────────────────────────────────────────────── */
+async function tokenizeCard() {
+  const btn        = document.getElementById("tokenize-btn");
+  const resultEl   = document.getElementById("token-result");
+  const checkoutId = document.getElementById("form-checkout-id").value || lastCheckoutId;
+
+  const cardNumber = document.getElementById("card-number").value.replace(/\s/g, "");
+  const expiry     = document.getElementById("card-expiry").value;
+  const cvc        = document.getElementById("card-cvc").value;
+
+  if (!cardNumber || !expiry || !cvc) {
+    showTokenResult(resultEl, false, "カード番号・有効期限・CVV をすべて入力してください。");
+    return;
+  }
+  if (!checkoutId) {
+    showTokenResult(resultEl, false, "先にデモを実行して checkout_id を取得してください。");
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = "⏳ トークン発行中...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/tokenize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: checkoutId, amount: 1000, currency: "jpy" }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      showTokenResult(resultEl, false, `エラー: ${esc(data.error ?? "不明なエラー")}`);
+    } else {
+      const expLabel = data.expiry ? `有効期限: ${new Date(data.expiry).toLocaleString("ja-JP")}` : "";
+      const mockNote = data._mock ? "（モックモード）" : "";
+      showTokenResult(resultEl, true,
+        `✅ 決済トークンを発行しました ${mockNote}<br>${expLabel}`,
+        data.token,
+      );
+    }
+  } catch (err) {
+    showTokenResult(resultEl, false, `通信エラー: ${esc(err.message)}`);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "💳 決済トークンを発行";
+  }
+}
+
+function showTokenResult(el, ok, html, token) {
+  el.className = "token-result " + (ok ? "ok" : "err");
+  el.innerHTML = html + (token ? `<code>${esc(token)}</code>` : "");
+  el.style.display = "block";
 }
 
 /* ── Utils ───────────────────────────────────────────────────────────────────── */

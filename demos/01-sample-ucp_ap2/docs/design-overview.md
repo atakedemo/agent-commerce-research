@@ -23,12 +23,20 @@
 │       ├── backend/             # Medusa（Store/Admin API、シード等）
 │       └── storefront/          # Next.js 15 ストアフロント
 ├── b-mcp-server/                # UCP Shopping に沿った MCP（stdio）
-│   └── src/server.js
+│   └── src/server.js            # 12 Tool 実装・Medusa 連携・Payment Handler 連携
+├── c-ai-agent-app/              # AI エージェント UI（Express + Gemini）
+│   ├── src/
+│   │   ├── server.js            # Express サーバー（/api/demo・/api/chat・/api/tokenize）
+│   │   ├── shopping-flow.js     # デモ自動実行フロー（決済トークン発行ステップ含む）
+│   │   └── mcp-client.js        # b-mcp-server stdio クライアント
+│   └── public/index.html        # デモ UI（カード入力フォーム含む）
+├── d-payment-handler/           # UCP Payment Handler（Stripe ベースのトークン発行）
+│   └── src/server.js            # POST /tokenize・POST /detokenize・GET /health
 ├── references/
 │   └── ucp-shopping-mcp.openrpc.json
 └── docs/
     ├── design-overview.md       # 本書
-    ├── sequence.md              # UCP 接続シーケンス（MCP 前提）
+    ├── sequence.md              # UCP 接続シーケンス（MCP 前提・Stripe 連携含む）
     ├── mcp-reference.md         # MCP Tool 一覧・入力出力例
     ├── api-reference.md         # HTTP Store / Admin と関連
     ├── state-transition.md
@@ -38,19 +46,22 @@
 ## システム構成（レイヤ構造）
 
 - **Human チャネル（`a-sandbox-ec`）**: Next.js が `[countryCode]` を解釈し、`@medusajs/js-sdk` で Medusa Store API を呼ぶ。ミドルウェアでリージョンとクッキー。ここは従来のヘッドレス店頭であり、**MCP と直結しない**経路でも EC を利用できる。
-- **Agent チャネル（MCP）**: AI エージェントのアプリ側バックエンドが **単一 MCP 接続**で `search_catalog` / `get_product` / `lookup_catalog`、`create_cart` / `get_cart` / `update_cart` / `cancel_cart`、`create_checkout` / `get_checkout` / `update_checkout` / `complete_checkout` / `cancel_checkout` 等を順にまたは必要に応じて呼ぶ（論理順序の全体像は [`sequence.md`](sequence.md) §1〜§3）。
-- **MCP と既存 EC の関係**: MCP 実装が **アダプタ**として動き、内部的に Medusa の Store API（`POST /store/carts` など）へマッピングする想定。**UCP の `Checkout` と Medusa のカート/注文は 1:1 ではなく**（[`sequence.md`](sequence.md#7-assumptions)）、フィールド対応はアダプタ設計として別問題として扱う。
+- **Agent チャネル（`c-ai-agent-app` + MCP）**: AI エージェントの UI アプリ（Express + Gemini）が **単一 MCP 接続**（`b-mcp-server`）で `search_catalog` / `get_product` / `lookup_catalog`、`create_cart` / `get_cart` / `update_cart` / `cancel_cart`、`create_checkout` / `get_checkout` / `update_checkout` / `complete_checkout` / `cancel_checkout` 等を順にまたは必要に応じて呼ぶ（論理順序の全体像は [`sequence.md`](sequence.md) §1〜§3）。
+- **Payment Handler チャネル（`d-payment-handler` + Stripe）**: `create_checkout` レスポンスの `payment_handlers` config を受け取った Platform（`c-ai-agent-app`）が **MCP の外側**で `d-payment-handler` の `POST /tokenize` を呼び出し、UCP トークン（`ucp_tok_*`）を発行する。`d-payment-handler` は内部で Stripe の `paymentIntents.create` を呼び出し、PaymentIntent ID と UCP トークンを紐付けて管理する。
+- **MCP と既存 EC の関係**: MCP 実装が **アダプタ**として動き、内部的に Medusa の Store API（`POST /store/carts` など）へマッピングする想定。**UCP の `Checkout` と Medusa のカート/注文は 1:1 ではなく**（[`sequence.md`](sequence.md#7-assumptions)）、フィールド対応はアダプタ設計として別問題として扱う。`complete_checkout` 時は `/detokenize` で UCP トークンを検証し、Stripe PaymentIntent を確定（`/v1/payment_intents/{id}/confirm`）してから Medusa の注文確定を呼ぶ。
 - **`b-mcp-server` と Medusa**: [`mcp-reference.md`](mcp-reference.md) 冒頭の設計概要どおり、`EC_BACKEND_URL` と `EC_PUBLISHABLE_KEY` が揃っている場合、`create_checkout` の処理中などに **限定して** HTTP で Medusa と連携し、応答に `_ec_mirror` を載せられる。チェックアウト状態本体は開発用に **プロセス内メモリ**（再起動で消失）。
 
 ## 処理の流れ（UCP／MCP 観点の要約）
 
 [`sequence.md`](sequence.md) と整合させた抽象は次のとおり。
 
-| フェーズ | 主な MCP Tool（一例） | コメント |
+| フェーズ | 主な MCP Tool / API（一例） | コメント |
 | -------- | ---------------------- | -------- |
 | 検索・詳細 | `search_catalog`、`get_product`（複数 ID は `lookup_catalog`） | `meta.ucp-agent.profile` 等、`meta` 必須（[`mcp-reference.md`](mcp-reference.md) §1）。 |
 | カート | なければ `create_cart`、あり得る経路として `get_cart` → **クライアント側で行マージ** → `update_cart` | **`update_cart` はカート全体の置換**（規格）；行を失わずに足すときは現状態を読んでから送る。[`cart.md`](../../../references/specification/community/ucp/docs/specification/cart.md) / [`sequence.md`](sequence.md) §2。 |
-| チェックアウト | `create_checkout`（`cart_id` でカートから引き継ぎうる場合はプロファイル次第）、`update_checkout`、`get_checkout`、`complete_checkout` / `cancel_checkout` | **`complete_checkout` / `cancel_checkout` では `meta.idempotency-key` 必須**（OpenRPC）。本デモの `complete_checkout` の Medusa `/complete` 呼び出しは未実装の旨は [`mcp-reference.md`](mcp-reference.md) §12。 |
+| チェックアウト開始 | `create_checkout`（`cart_id` でカートから引き継ぎうる場合はプロファイル次第）、`update_checkout`、`get_checkout` | `create_checkout` レスポンスに `payment_handlers["dev.ucp.payment.stripe"]` が含まれる（`PAYMENT_HANDLER_URL` 設定時）。 |
+| **決済トークン発行**（MCP 外） | `d-payment-handler POST /tokenize` → Stripe `paymentIntents.create` | Platform（`c-ai-agent-app`）が `d-payment-handler` を直接呼び出す。Stripe PaymentIntent を作成し UCP トークン（`ucp_tok_*`）を返す。詳細は [`sequence.md`](sequence.md) §3 補足。 |
+| チェックアウト完了 | `complete_checkout` | `meta.idempotency-key` 必須。`b-mcp-server` が内部で `/detokenize` → Stripe confirm → Medusa `/complete` の順に処理し、`order_id` を返す。 |
 
 役割のみの読み替え用の抽象シーケンスは [`sequence.md`](sequence.md) §4。
 
@@ -113,6 +124,7 @@
 - **単一 MCP エンドポイント前提**および **認証・署名の検証が本デモで未実装な部分**については [`sequence.md` §7](sequence.md#7-assumptions) を参照。
 - **カスタム HTTP**（`/store/custom` 等）はプレースホルダに近い。
 - **エージェント向け MCP サーバー起動**（開発用）は [`sequence.md`](sequence.md#6-mcp-サーバーの起動開発用)および [`mcp-reference.md`](mcp-reference.md#14-起動例開発用)（`cd b-mcp-server` → `npm install` → `npm start`。任意で `EC_BACKEND_URL` と `EC_PUBLISHABLE_KEY`）。
+- **Payment Handler の起動**: `cd d-payment-handler` → `npm install` → `node src/server.js`（デフォルト `:3200`）。`STRIPE_SECRET_KEY` 未設定時はモックモード（`pi_mock_*` を返す）。`c-ai-agent-app` の `.env` に `PAYMENT_HANDLER_URL=http://localhost:3200` を設定すると決済トークン発行が有効になる。
 
 ## カスタマイズの起点（人間向け店頭・バックエンド）
 

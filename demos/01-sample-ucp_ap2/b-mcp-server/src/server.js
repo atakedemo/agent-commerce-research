@@ -22,6 +22,49 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import * as medusa from "./medusa.js";
 
+// ─── Payment Handler config ────────────────────────────────────────────────────
+
+const PAYMENT_HANDLER_URL = process.env.PAYMENT_HANDLER_URL?.replace(/\/$/, "") ?? null;
+const STRIPE_SECRET_KEY   = process.env.STRIPE_SECRET_KEY ?? null;
+
+/**
+ * Calls d-payment-handler /detokenize to validate a UCP payment token.
+ * Returns { payment_intent_id, payment_intent_status, amount, currency } or throws.
+ */
+async function validatePaymentToken(token, checkoutId) {
+  const res = await fetch(`${PAYMENT_HANDLER_URL}/detokenize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token, binding: { checkout_id: checkoutId } }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`detokenize ${res.status}: ${detail}`);
+  }
+  return res.json();
+}
+
+/**
+ * Confirms a Stripe PaymentIntent via the Stripe REST API (no SDK).
+ * No-ops in mock mode (STRIPE_SECRET_KEY unset).
+ */
+async function confirmStripePaymentIntent(piId) {
+  if (!STRIPE_SECRET_KEY) return null;
+  const res = await fetch(`https://api.stripe.com/v1/payment_intents/${piId}/confirm`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: "",
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`stripe confirm ${res.status}: ${detail}`);
+  }
+  return res.json();
+}
+
 // ─── Schema helpers ────────────────────────────────────────────────────────────
 
 const metaBase = z
@@ -446,6 +489,21 @@ mcp.registerTool(
 
     const rec = recordForResponse(id, meta, checkout, "incomplete");
     if (medusaCartId) rec._medusa_cart_id = medusaCartId;
+
+    if (PAYMENT_HANDLER_URL) {
+      rec.checkout = {
+        ...rec.checkout,
+        payment_handlers: {
+          "dev.ucp.payment.stripe": [{
+            version: "2026-01-15",
+            tokenizer: "external",
+            endpoint: PAYMENT_HANDLER_URL,
+            operations: ["/tokenize"],
+          }],
+        },
+      };
+    }
+
     checkouts.set(id, rec);
     return ok(rec);
   },
@@ -513,8 +571,26 @@ mcp.registerTool(
     if (!prev) return err({ error: "checkout_not_found", id });
     if (prev.status === "canceled") return err({ error: "checkout_canceled", id });
 
+    // Validate and decode the payment token if a Payment Handler is configured
+    const instruments = checkout?.payment?.instruments ?? prev.checkout?.payment?.instruments ?? [];
+    const instrument  = instruments[0];
+    if (instrument?.credential?.token && PAYMENT_HANDLER_URL) {
+      try {
+        const detoken = await validatePaymentToken(instrument.credential.token, id);
+        if (detoken?.payment_intent_id) {
+          await confirmStripePaymentIntent(detoken.payment_intent_id);
+        }
+      } catch (e) {
+        return err({ error: "payment_validation_failed", detail: e.message });
+      }
+    }
+
+    let orderId = null;
     if (prev._medusa_cart_id) {
-      try { await medusa.completeCheckoutCart(prev._medusa_cart_id); } catch {}
+      try {
+        const result = await medusa.completeCheckoutCart(prev._medusa_cart_id);
+        orderId = result?.orderId ?? null;
+      } catch {}
     }
 
     const done = {
@@ -525,6 +601,7 @@ mcp.registerTool(
         "ucp-agent": meta["ucp-agent"],
         "idempotency-key": meta["idempotency-key"],
       },
+      ...(orderId ? { order_id: orderId } : {}),
     };
     checkouts.set(id, done);
     return ok(done);

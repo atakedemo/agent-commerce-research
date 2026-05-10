@@ -228,5 +228,6 @@ export async function completeCheckoutCart(medusaCartId) {
     method: "POST",
     body: JSON.stringify({}),
   });
-  return !!data;
+  if (!data) return null;
+  return { orderId: data.order?.id ?? null };
 }

@@ -114,8 +114,9 @@ sequenceDiagram
         participant FE as AIエージェント<br/>（フロントエンド）
         participant BE as AIエージェント<br/>（バックエンド）
     end
-    box rgb(230,255,230) 外部決済
-        participant PayHandler as Payment Handler<br/>（例: Google Pay）
+    box rgb(230,255,230) 外部決済・決済 PSP
+        participant PayHandler as Payment Handler<br/>（d-payment-handler）
+        participant Stripe as Stripe API
     end
     box rgb(255,248,240) 既存ECサイト側
         participant MCP as 既存ECサイト<br/>（MCP・単一endpoint）
@@ -141,18 +142,22 @@ sequenceDiagram
     MCP-->>BE: 権威ある状態（表示・分岐用）
 
     rect rgb(204,255,204)
-        Note over BE,PayHandler: 【決済トークン発行】MCP外 — Payment Handler 連携
-        BE->>PayHandler: Payment Handler 初期化<br/>（create_checkout レスポンスの payment_handlers config を使用）
-        PayHandler-->>BE: 利用可否確認（isReadyToPay 等）
-        BE-->>FE: 決済 UI の表示要求
-        FE->>PayHandler: Buyer が決済手段を選択・認証承認
-        PayHandler-->>FE: Payment Instrument<br/>（暗号化トークン・billing_address・display 等）
-        FE-->>BE: Payment Instrument を転送
+        Note over FE,Stripe: 【決済トークン発行】MCP外 — d-payment-handler + Stripe 連携
+        FE-->>BE: カード情報を入力（番号・有効期限・CVV）
+        BE->>PayHandler: POST /tokenize<br/>{ credential:{payment_method_id}, binding:{checkout_id}, amount, currency }
+        PayHandler->>Stripe: paymentIntents.create<br/>{ amount, currency, payment_method, confirm:false }
+        Stripe-->>PayHandler: PaymentIntent { id:"pi_xxx", status:"requires_confirmation" }
+        PayHandler-->>BE: { token:"ucp_tok_xxx", expiry }
+        BE-->>FE: 決済トークン発行完了
     end
 
     Note over BE,MCP: 完了/取消は meta.idempotency-key 必須（OpenRPC）
-    BE->>MCP: complete_checkout(meta, id,<br/>checkout{payment:{instruments:[{<br/>handler_id, type:"card",<br/>credential:{type:"PAYMENT_GATEWAY", token:"..."},<br/>billing_address, display}]}})
-    MCP->>EC: Payment Instrument（token）を PSP へ渡して<br/>決済処理・注文確定
+    BE->>MCP: complete_checkout(meta, id,<br/>checkout{payment:{instruments:[{<br/>type:"card",<br/>credential:{token:"ucp_tok_xxx"},<br/>display:{brand:"visa",last4:"4242"}}]}})
+    MCP->>PayHandler: POST /detokenize<br/>{ token:"ucp_tok_xxx", binding:{checkout_id} }
+    PayHandler-->>MCP: { payment_intent_id:"pi_xxx",<br/>payment_intent_status:"requires_confirmation" }
+    MCP->>Stripe: POST /v1/payment_intents/pi_xxx/confirm
+    Stripe-->>MCP: PaymentIntent { status:"succeeded" }
+    MCP->>EC: チェックアウト完了<br/>（Medusa POST /store/carts/{id}/complete）
     EC-->>MCP: 注文確定結果
     MCP-->>BE: Checkout（status:"completed", order_id）
     BE-->>FE: 完了メッセージ
@@ -163,55 +168,27 @@ sequenceDiagram
 
 ---
 
-### 補足：決済トークン発行の詳細（`create_checkout` レスポンスからの情報取得と API 呼び出し）
+### 補足：決済トークン発行の詳細（d-payment-handler + Stripe 実装）
+
+本デモでは `d-payment-handler` が Tokenizer として動作し、Stripe の PaymentIntent API を利用して UCP トークンを発行する。
 
 #### 1. `create_checkout` レスポンスの参照パス
 
-Platform は `create_checkout` レスポンスの下記 JSON パスから Payment Handler の設定情報を取得する。
+`PAYMENT_HANDLER_URL` が設定されている場合、`b-mcp-server` の `create_checkout` レスポンスに `payment_handlers` が付加される。
 
 ```json
 {
   "id": "co_3f7c8e2a-...",
   "status": "incomplete",
+  "ucp_meta": { "ucp-agent": { "profile": "https://..." } },
   "checkout": {
-    "totals": [
-      { "type": "total", "amount": 5500, "currency": "JPY" }
-    ],
     "payment_handlers": {
-      "com.google.pay": [
+      "dev.ucp.payment.stripe": [
         {
-          "id": "gpay_handler_001",
-          "version": "2026-01-23",
-          "available_instruments": [
-            { "type": "card", "constraints": { "brands": ["visa", "mastercard", "amex"] } }
-          ],
-          "config": {
-            "api_version": 2,
-            "environment": "PRODUCTION",
-            "merchant_info": {
-              "merchant_name": "My EC Store",
-              "merchant_id": "12345678901234567890",
-              "merchant_origin": "https://merchant.example.com"
-            },
-            "allowed_payment_methods": [
-              {
-                "type": "CARD",
-                "parameters": {
-                  "allowed_auth_methods": ["PAN_ONLY"],
-                  "allowed_card_networks": ["VISA", "MASTERCARD", "AMEX"],
-                  "billingAddressRequired": true,
-                  "billingAddressParameters": { "format": "FULL" }
-                },
-                "tokenization_specification": {
-                  "type": "PAYMENT_GATEWAY",
-                  "parameters": {
-                    "gateway": "example_psp",
-                    "gatewayMerchantId": "merchant_001"
-                  }
-                }
-              }
-            ]
-          }
+          "version": "2026-01-15",
+          "tokenizer": "external",
+          "endpoint": "http://localhost:3200",
+          "operations": ["/tokenize"]
         }
       ]
     }
@@ -221,100 +198,154 @@ Platform は `create_checkout` レスポンスの下記 JSON パスから Paymen
 
 | 参照パス | 用途 |
 | :--- | :--- |
-| `checkout.payment_handlers["com.google.pay"][0].id` | `complete_checkout` の `handler_id` に使う |
-| `checkout.payment_handlers["com.google.pay"][0].config.api_version` | Google Pay API の初期化パラメータ |
-| `checkout.payment_handlers["com.google.pay"][0].config.environment` | `"TEST"` or `"PRODUCTION"` の切り替え |
-| `checkout.payment_handlers["com.google.pay"][0].config.merchant_info` | `PaymentsClient` 初期化 / `loadPaymentData` の `merchantInfo` |
-| `checkout.payment_handlers["com.google.pay"][0].config.allowed_payment_methods` | `isReadyToPay` / `loadPaymentData` の `allowedPaymentMethods` |
-| `checkout.payment_handlers["com.google.pay"][0].config.allowed_payment_methods[].tokenization_specification` | PSP 向けトークン化仕様（`gateway`・`gatewayMerchantId`） |
-| `checkout.totals[]` (`type: "total"`) | `loadPaymentData` の `transactionInfo.totalPrice` と `currencyCode` |
-| `checkout.payment_handlers["com.google.pay"][0].available_instruments[].constraints.brands` | 表示するカードブランドの絞り込み（Business が解決した権威値） |
+| `checkout.payment_handlers["dev.ucp.payment.stripe"][0].endpoint` | `POST /tokenize` の送信先（d-payment-handler URL） |
+| `checkout.payment_handlers["dev.ucp.payment.stripe"][0].operations` | 利用可能なエンドポイント（`["/tokenize"]`） |
+| `id`（レスポンスルート） | `binding.checkout_id` として `/tokenize` に渡す |
 
-#### 2. Platform 側の API 呼び出し手順（例: Google Pay）
+#### 2. Platform → d-payment-handler: POST /tokenize
 
-```
-① PaymentsClient の初期化
-   new google.payments.api.PaymentsClient({
-     environment: config.environment           // ← checkout.payment_handlers["com.google.pay"][0].config.environment
-   })
+Buyer がカード情報を入力した後、Platform（c-ai-agent-app）は `d-payment-handler` の `/tokenize` を呼び出す。
 
-② isReadyToPay — 利用可否の確認
-   paymentsClient.isReadyToPay({
-     apiVersion:      config.api_version,      // ← .config.api_version
-     apiVersionMinor: 0,
-     allowedPaymentMethods: config.allowed_payment_methods  // ← .config.allowed_payment_methods
-   })
-   → { result: true } なら決済ボタンを表示
+**リクエスト**
 
-③ loadPaymentData — Buyer の認証と Payment Instrument の取得
-   paymentsClient.loadPaymentData({
-     apiVersion:      config.api_version,
-     apiVersionMinor: 0,
-     merchantInfo:    config.merchant_info,    // ← .config.merchant_info（merchant_name / merchant_id / merchant_origin）
-     allowedPaymentMethods: config.allowed_payment_methods,
-     transactionInfo: {
-       totalPriceStatus: "FINAL",
-       totalPrice: String(total.amount / 100), // ← checkout.totals[type="total"].amount（通貨最小単位→文字列）
-       currencyCode: total.currency            // ← checkout.totals[type="total"].currency
-     }
-   })
-   → PaymentData {
-       paymentMethodData: {
-         type: "CARD",
-         tokenizationData: {
-           type: "PAYMENT_GATEWAY",
-           token: "{encrypted-token}"          // ← complete_checkout の credential.token に使う
-         },
-         info: {
-           cardNetwork: "VISA",
-           cardDetails: "4242"                 // ← display.brand / display.last_digits に使う
-         },
-         description: "Visa •••• 4242"
-       },
-       shippingAddress: { ... }                // ← billing_address に使う（設定に依存）
-     }
+```http
+POST http://localhost:3200/tokenize
+Content-Type: application/json
+
+{
+  "credential": {
+    "payment_method_id": "pm_card_visa"
+  },
+  "binding": {
+    "checkout_id": "co_3f7c8e2a-..."
+  },
+  "amount": 1000,
+  "currency": "jpy"
+}
 ```
 
-#### 3. `complete_checkout` に渡す `PaymentInstrument` の組み立て
+> **注**: `credential.payment_method_id` は Stripe の PaymentMethod ID。本デモでは `pm_card_visa`（テスト用）を使用。実運用では Stripe.js で実際のカード情報をトークン化して取得した `pm_*` を渡す。
 
-上記 `loadPaymentData` のレスポンスを UCP の `PaymentInstrument` 形式に変換して `complete_checkout` に渡す。
+**d-payment-handler 内部処理（Stripe モード）**
+
+```
+stripe.paymentIntents.create({
+  amount: 1000,
+  currency: "jpy",
+  payment_method: "pm_card_visa",
+  confirm: false,
+  metadata: { checkout_id: "co_3f7c8e2a-..." }
+})
+→ PaymentIntent { id: "pi_xxx", status: "requires_confirmation" }
+
+tokenStore.set("ucp_tok_xxx", {
+  paymentIntentId: "pi_xxx",
+  checkoutId: "co_3f7c8e2a-...",
+  amount: 1000,
+  currency: "jpy",
+  expiresAt: <30分後>,
+  isMock: false
+})
+```
+
+**レスポンス**
 
 ```json
 {
-  "id": "instr_001",
-  "handler_id": "gpay_handler_001",
-  "type": "card",
-  "display": {
-    "brand": "visa",
-    "last_digits": "4242",
-    "description": "Visa •••• 4242"
+  "token": "ucp_tok_a3b8f2c1d4e5...",
+  "expiry": "2026-05-10T11:00:00.000Z"
+}
+```
+
+#### 3. Platform → MCP: complete_checkout（UCP トークンを含む）
+
+取得した UCP トークンを `checkout.payment.instruments` に格納して `complete_checkout` を呼び出す。
+
+```json
+{
+  "meta": {
+    "ucp-agent": { "profile": "https://demo-agent.example/.well-known/ucp" },
+    "idempotency-key": "550e8400-e29b-41d4-a716-446655440000"
   },
-  "billing_address": {
-    "first_name": "Taro",
-    "last_name": "Yamada",
-    "street_address": "1-1-1 Shibuya",
-    "address_locality": "Shibuya-ku",
-    "address_region": "Tokyo",
-    "postal_code": "150-0001",
-    "address_country": "JP"
-  },
-  "credential": {
-    "type": "PAYMENT_GATEWAY",
-    "token": "{encrypted-token from tokenizationData.token}"
+  "id": "co_3f7c8e2a-...",
+  "checkout": {
+    "payment": {
+      "instruments": [
+        {
+          "type": "card",
+          "credential": {
+            "token": "ucp_tok_a3b8f2c1d4e5..."
+          },
+          "display": {
+            "brand": "visa",
+            "last4": "4242"
+          }
+        }
+      ]
+    }
   }
 }
 ```
 
-| `PaymentInstrument` フィールド | 組み立て元 |
-| :--- | :--- |
-| `handler_id` | `checkout.payment_handlers["com.google.pay"][0].id` |
-| `type` | Google Pay の `paymentMethodData.type`（`"CARD"` → UCP では `"card"`） |
-| `display.brand` | `paymentMethodData.info.cardNetwork`（小文字化） |
-| `display.last_digits` | `paymentMethodData.info.cardDetails` |
-| `display.description` | `paymentMethodData.description` |
-| `billing_address` | `loadPaymentData` の `billingAddress`（`billingAddressRequired: true` の場合） |
-| `credential.type` | `paymentMethodData.tokenizationData.type`（`"PAYMENT_GATEWAY"`） |
-| `credential.token` | `paymentMethodData.tokenizationData.token`（PSP の復号対象） |
+#### 4. MCP → d-payment-handler: POST /detokenize（complete_checkout 内部）
+
+`b-mcp-server` は `complete_checkout` の処理中に `/detokenize` を呼び出してトークンを検証・デコードする（単回使用で即失効）。
+
+**リクエスト**
+
+```http
+POST http://localhost:3200/detokenize
+Content-Type: application/json
+
+{
+  "token": "ucp_tok_a3b8f2c1d4e5...",
+  "binding": {
+    "checkout_id": "co_3f7c8e2a-..."
+  }
+}
+```
+
+**レスポンス**
+
+```json
+{
+  "payment_intent_id": "pi_xxx",
+  "payment_intent_status": "requires_confirmation",
+  "amount": 1000,
+  "currency": "jpy"
+}
+```
+
+#### 5. MCP → Stripe: PaymentIntent confirm（complete_checkout 内部）
+
+`b-mcp-server` はデコードされた `payment_intent_id` を使い、Stripe REST API を直接呼び出して決済を確定する。
+
+```http
+POST https://api.stripe.com/v1/payment_intents/pi_xxx/confirm
+Authorization: Bearer sk_test_...
+Content-Type: application/x-www-form-urlencoded
+```
+
+**レスポンス（成功時）**
+
+```json
+{
+  "id": "pi_xxx",
+  "status": "succeeded",
+  "amount": 1000,
+  "currency": "jpy"
+}
+```
+
+Stripe 確定後、Medusa の `POST /store/carts/{id}/complete` を呼び出して注文を確定し、`order_id` を `complete_checkout` のレスポンスに含めて返す。
+
+| 処理ステップ | 実行主体 | API |
+| :--- | :--- | :--- |
+| UCP トークン発行 | Platform（c-ai-agent-app） | `d-payment-handler POST /tokenize` |
+| Stripe PaymentIntent 作成 | d-payment-handler | `stripe.paymentIntents.create` |
+| UCP トークン検証・デコード | MCP（b-mcp-server） | `d-payment-handler POST /detokenize` |
+| Stripe 決済確定 | MCP（b-mcp-server） | `Stripe API POST /v1/payment_intents/{id}/confirm` |
+| 注文確定 | MCP（b-mcp-server） | `Medusa POST /store/carts/{id}/complete` |
 
 ---
 
