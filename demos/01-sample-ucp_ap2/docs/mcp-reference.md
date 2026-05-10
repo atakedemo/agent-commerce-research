@@ -66,12 +66,13 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
 ### 2.3 チェックアウト（本デモ `b-mcp-server` 実装）
 
 
-| MCP Tool            | 紐づける主な Store API（`api-reference.md` §3）                                                                                                                                                                                                                                                                                                                         | 備考                                                                                                                                                                                                                                                             |
+| MCP Tool / ステップ    | 紐づける主な Store API（`api-reference.md` §3）                                                                                                                                                                                                                                                                                                                         | 備考                                                                                                                                                                                                                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `create_checkout`   | `POST /store/carts`                                                                                                                                                                                                                                                                                                                                             | 現行 `b-mcp-server` が環境変数有効時に **ここだけ** HTTP 呼び出し。`region_id` 確定には **§3** `GET /store/regions` 等が前段になりうる。`cart_id` で UCP カートから引き継ぐ場合は [cart-to-checkout](../../../references/specification/community/ucp/docs/specification/cart.md#cart-to-checkout-conversion)。 |
+| `create_checkout`   | `POST /store/carts`                                                                                                                                                                                                                                                                                                                                             | 現行 `b-mcp-server` が環境変数有効時に **ここだけ** HTTP 呼び出し。`region_id` 確定には **§3** `GET /store/regions` 等が前段になりうる。`cart_id` で UCP カートから引き継ぐ場合は [cart-to-checkout](../../../references/specification/community/ucp/docs/specification/cart.md#cart-to-checkout-conversion)。レスポンスの `payment_handlers` config を後続の決済トークン発行に使用する。 |
 | `get_checkout`      | `GET /store/carts/{id}`                                                                                                                                                                                                                                                                                                                                         | 読み取りスナップショット。`fields`・`expand` は [Medusa Store API](https://docs.medusajs.com/api/store) 慣例に従う。                                                                                                                                                                |
 | `update_checkout`   | `POST /store/carts/{id}`*必要に応じて`POST /store/carts/{id}/line-items``POST`・`DELETE` `/store/carts/{id}/line-items/{line_id}``POST /store/carts/{id}/shipping-methods``GET /store/shipping-options`（`cart_id`）`POST /store/shipping-options/{id}/calculate``POST /store/payment-collections``POST /store/payment-collections/{id}/payment-sessions` | 「checkout 一括更新」は Medusa では **複数 HTTP** に分解しうる。差分に応じアダプタで振り分け。                                                                                                                                                                                                  |
-| `complete_checkout` | `POST /store/carts/{id}/complete`                                                                                                                                                                                                                                                                                                                               | 顧客紐づけは **§3** `POST /store/carts/{id}/customer`。決済は payment-collections / payment-sessions（**§3**）を先行しうる。                                                                                                                                                      |
+| **【決済トークン発行】**（MCP外）| — （Payment Handler の API／SDK を Platform が直接呼び出す）                                                                                                                                                                                                                                                                                                              | `create_checkout` レスポンスの `payment_handlers` config を使い、Platform が Payment Handler（例: `com.google.pay`）を呼び出してトークン（`PaymentInstrument`）を取得する。Buyer の認証を伴う。取得したトークンを次の `complete_checkout` の `payment.instruments` に渡す（[sequence.md §3](sequence.md#3-具体シーケンスチェックアウト完了まで)・§12 参照）。 |
+| `complete_checkout` | `POST /store/carts/{id}/complete`                                                                                                                                                                                                                                                                                                                               | 顧客紐づけは **§3** `POST /store/carts/{id}/customer`。`checkout.payment.instruments` に決済トークン発行で取得した `PaymentInstrument` を含めて送信する（§12 参照）。アダプタが credential token を PSP に渡して決済処理を行う。                                                                                   |
 | `cancel_checkout`   | （**§3 にチェックアウト専用の取消ルートは記載なし**）                                                                                                                                                                                                                                                                                                                                  | 運用・カスタムルートで方針を決める。現デモは MCP 上の状態のみ `canceled`。                                                                                                                                                                                                                  |
 
 
@@ -461,10 +462,46 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
     "idempotency-key": "11111111-1111-4111-8111-111111111111"
   },
   "checkout": {
-    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }]
+    "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }],
+    "payment_handlers": {
+      "com.google.pay": [
+        {
+          "id": "gpay_handler_001",
+          "version": "2026-01-23",
+          "available_instruments": [
+            { "type": "card", "constraints": { "brands": ["visa", "mastercard", "amex"] } }
+          ],
+          "config": {
+            "api_version": 2,
+            "environment": "PRODUCTION",
+            "merchant_info": {
+              "merchant_name": "My EC Store",
+              "merchant_id": "12345678901234567890",
+              "merchant_origin": "https://merchant.example.com"
+            },
+            "allowed_payment_methods": [
+              {
+                "type": "CARD",
+                "parameters": {
+                  "allowed_auth_methods": ["PAN_ONLY"],
+                  "allowed_card_networks": ["VISA", "MASTERCARD", "AMEX"],
+                  "billingAddressRequired": true
+                },
+                "tokenization_specification": {
+                  "type": "PAYMENT_GATEWAY",
+                  "parameters": { "gateway": "example_psp", "gatewayMerchantId": "merchant_001" }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
   }
 }
 ```
+
+> **補足（Payment Handler フロー）**: Platform はこのレスポンスの `payment_handlers` config を用いて Payment Handler（例: Google Pay SDK）を初期化し、Buyer に決済 UI を提示してトークン（`PaymentInstrument`）を取得する。このステップは **MCP 外**で行われ、取得したトークンを `complete_checkout` の `payment.instruments` に渡す（§3 シーケンス図・[sequence.md §3](sequence.md#3-具体シーケンスチェックアウト完了まで) 参照）。
 
 ---
 
@@ -599,11 +636,42 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
 
 | 項目                        | 内容                                                                                                                                                                        |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 説明                        | チェックアウトを完了状態にする（OpenRPC: `complete_checkout`）。**注文確定・決済の Medusa 呼び出しは未実装**（デモ用状態遷移のみ）。                                                                                    |
-| 入力                        | `meta`（`idempotency-key` **必須**）、`id`、`checkout`（完了時にマージするオブジェクト）                                                                                                         |
+| 説明                        | チェックアウトを完了状態にする（OpenRPC: `complete_checkout`）。`checkout.payment.instruments` に Payment Handler から取得した `PaymentInstrument`（暗号化トークン等）を含めて送信する。**注文確定・決済の Medusa 呼び出しは未実装**（デモ用状態遷移のみ）。 |
+| 入力                        | `meta`（`idempotency-key` **必須**）、`id`、`checkout`（`payment.instruments[]` に Payment Handler で取得したトークン・billing_address・display 等を含む） |
 | 応答                        | `status: "completed"` のレコード。                                                                                                                                              |
-| **api-reference.md との対応** | **§3** `POST /store/carts/{id}/complete`。ログイン顧客に紐づける場合は同 **§3** `POST /store/carts/{id}/customer`、決済フローは payment-collections / payment-sessions（**§3** 記載）を先行完了させる想定が一般的。 |
+| **api-reference.md との対応** | **§3** `POST /store/carts/{id}/complete`。ログイン顧客に紐づける場合は同 **§3** `POST /store/carts/{id}/customer`。実装上は `checkout.payment.instruments` の credential token を PSP（Payment Handler の処理系）に渡して決済する。 |
+| **Payment Handler との関係** | `complete_checkout` 呼び出し前に、Platform が Payment Handler（例: `com.google.pay`）から `PaymentInstrument`（暗号化トークン）を取得しておく（MCP外の処理）。取得手順は [sequence.md §3](sequence.md#3-具体シーケンスチェックアウト完了まで) 参照。 |
 
+
+**前提（決済トークン発行の完了）**:
+
+`complete_checkout` を呼ぶ前に、Platform は `create_checkout` レスポンスの `payment_handlers` config を使い、Payment Handler から次の形式の `PaymentInstrument` を取得済みであること:
+
+```json
+{
+  "id": "instr_001",
+  "handler_id": "gpay_handler_001",
+  "type": "card",
+  "display": {
+    "brand": "visa",
+    "last_digits": "4242",
+    "description": "Visa •••• 4242"
+  },
+  "billing_address": {
+    "first_name": "Taro",
+    "last_name": "Yamada",
+    "street_address": "1-1-1 Shibuya",
+    "address_locality": "Shibuya-ku",
+    "address_region": "Tokyo",
+    "postal_code": "150-0001",
+    "address_country": "JP"
+  },
+  "credential": {
+    "type": "PAYMENT_GATEWAY",
+    "token": "{encrypted-payment-method-token}"
+  }
+}
+```
 
 **リクエスト例**
 
@@ -617,7 +685,33 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
   },
   "id": "co_3f7c8e2a-9d1b-40e0-a7b4-0123456789ab",
   "checkout": {
-    "payment_reference": "demo_pending"
+    "payment": {
+      "instruments": [
+        {
+          "id": "instr_001",
+          "handler_id": "gpay_handler_001",
+          "type": "card",
+          "display": {
+            "brand": "visa",
+            "last_digits": "4242",
+            "description": "Visa •••• 4242"
+          },
+          "billing_address": {
+            "first_name": "Taro",
+            "last_name": "Yamada",
+            "street_address": "1-1-1 Shibuya",
+            "address_locality": "Shibuya-ku",
+            "address_region": "Tokyo",
+            "postal_code": "150-0001",
+            "address_country": "JP"
+          },
+          "credential": {
+            "type": "PAYMENT_GATEWAY",
+            "token": "{encrypted-payment-method-token}"
+          }
+        }
+      ]
+    }
   }
 }
 ```
@@ -637,7 +731,16 @@ UCP の各 Tool を本デモの Medusa（`[api-reference.md](api-reference.md)` 
   "checkout": {
     "line_items": [{ "variant_id": "variant_01EXAMPLE", "quantity": 1 }],
     "email": "shopper@example.com",
-    "payment_reference": "demo_pending"
+    "payment": {
+      "instruments": [
+        {
+          "id": "instr_001",
+          "handler_id": "gpay_handler_001",
+          "type": "card",
+          "display": { "brand": "visa", "last_digits": "4242" }
+        }
+      ]
+    }
   }
 }
 ```
