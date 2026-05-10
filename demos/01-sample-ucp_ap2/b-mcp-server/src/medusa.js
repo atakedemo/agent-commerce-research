@@ -223,7 +223,52 @@ export async function updateCheckoutCart(medusaCartId, updates) {
   return !!data;
 }
 
+/**
+ * Medusa v2 の cart complete 前に必要な準備を行う:
+ *   1. 配送方法が未設定なら最初の利用可能な option を追加
+ *   2. payment collection + payment session を初期化（system プロバイダー）
+ *
+ * いずれかのステップが失敗しても complete 自体は試みる（デモ用の best-effort）。
+ */
+async function prepareCartForComplete(medusaCartId) {
+  // 1. 配送方法の追加
+  try {
+    const shippingOptions = await mFetch(`/store/shipping-options?cart_id=${medusaCartId}`);
+    const firstOption = shippingOptions?.shipping_options?.[0];
+    if (firstOption) {
+      await mFetch(`/store/carts/${medusaCartId}/shipping-methods`, {
+        method: "POST",
+        body: JSON.stringify({ option_id: firstOption.id }),
+      });
+      console.log(`[medusa] shipping method added: ${firstOption.id}`);
+    }
+  } catch (e) {
+    console.warn("[medusa] shipping method setup skipped:", e.message);
+  }
+
+  // 2. Payment Collection + Session の初期化
+  try {
+    const pcData = await mFetch("/store/payment-collections", {
+      method: "POST",
+      body: JSON.stringify({ cart_id: medusaCartId }),
+    });
+    const pcId = pcData?.payment_collection?.id;
+    if (pcId) {
+      await mFetch(`/store/payment-collections/${pcId}/payment-sessions`, {
+        method: "POST",
+        body: JSON.stringify({ provider_id: "pp_system_default" }),
+      });
+      console.log(`[medusa] payment session initialized for collection: ${pcId}`);
+    }
+  } catch (e) {
+    console.warn("[medusa] payment session setup skipped:", e.message);
+  }
+}
+
 export async function completeCheckoutCart(medusaCartId) {
+  // Medusa v2 が要求する配送・支払い準備を先に実行
+  await prepareCartForComplete(medusaCartId);
+
   const data = await mFetch(`/store/carts/${medusaCartId}/complete`, {
     method: "POST",
     body: JSON.stringify({}),

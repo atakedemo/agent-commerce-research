@@ -368,7 +368,7 @@
       gap: 1rem;
     }
     .form-row { display: flex; gap: 1rem; }
-    .form-group { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; }
+    .form-group { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 0; }
     .form-group label {
       font-size: 0.7rem;
       font-weight: 700;
@@ -419,6 +419,68 @@
       padding: 0.3rem 0.5rem;
       border-radius: 4px;
     }
+
+    /* ── Chat toolbar ── */
+    .chat-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.5rem;
+    }
+    .settings-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: background 0.15s, color 0.15s;
+    }
+    .settings-btn:hover { background: var(--bg); color: var(--text); }
+    .profile-set-badge { font-size: 0.7rem; color: var(--green); margin-left: 0.2rem; }
+
+    /* ── Settings modal ── */
+    .settings-modal {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.75rem;
+      max-width: 500px;
+      width: calc(100% - 2rem);
+      max-height: calc(100vh - 4rem);
+      overflow-y: auto;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+    }
+    .settings-section-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 1.1rem 0 0.6rem;
+      padding-bottom: 0.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-save-btn {
+      display: block;
+      width: 100%;
+      margin-top: 1.25rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.65rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .settings-save-btn:hover { opacity: 0.88; }
+    .settings-form-row { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
+    .settings-form-row .form-group { margin-top: 0; }
+    .settings-form-group { margin-top: 0.75rem; }
   </style>
 </head>
 <body>
@@ -487,7 +549,7 @@
               <input id="card-expiry" type="text" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp" />
             </div>
             <div class="form-group">
-              <label for="card-cvc">セキュリティコード（CVV）</label>
+              <label for="card-cvc">CVV</label>
               <input id="card-cvc" type="text" placeholder="123" maxlength="4" autocomplete="cc-csc" />
             </div>
           </div>
@@ -501,9 +563,148 @@
 
   <!-- ── Chat Tab ── -->
   <div id="pane-chat" class="tab-pane">
+    <div class="chat-toolbar">
+      <button class="settings-btn" id="settings-open-btn">
+        ⚙️ 購入者情報設定<span class="profile-set-badge" id="settings-profile-badge" style="display:none">✓</span>
+      </button>
+    </div>
     <div id="chat-area"></div>
   </div>
 </main>
+
+<!-- ── Settings Modal ────────────────────────────────────────────────────────── -->
+<div id="settings-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; z-index:1000">
+  <div class="settings-modal">
+    <div class="modal-header">
+      <h3>⚙️ 購入者情報設定</h3>
+      <button class="modal-close" id="settings-close-btn" title="閉じる">✕</button>
+    </div>
+    <p class="modal-desc">
+      ここで登録した情報は AI エージェントが配送先・連絡先として自動入力します。<br>
+      情報はブラウザのローカルストレージに保存されます。
+    </p>
+    <div class="settings-section-title">氏名</div>
+    <div class="settings-form-row">
+      <div class="form-group">
+        <label for="s-first-name">名（First Name）</label>
+        <input id="s-first-name" type="text" placeholder="Taro" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-last-name">姓（Last Name）</label>
+        <input id="s-last-name" type="text" placeholder="Yamada" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-section-title">連絡先</div>
+    <div class="settings-form-row">
+      <div class="form-group" style="flex:2">
+        <label for="s-email">メールアドレス</label>
+        <input id="s-email" type="email" placeholder="taro@example.com" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-phone">電話番号</label>
+        <input id="s-phone" type="tel" placeholder="09000000000" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-section-title">住所</div>
+    <div class="settings-form-row">
+      <div class="form-group">
+        <label for="s-postal">郵便番号</label>
+        <input id="s-postal" type="text" placeholder="150-0044" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-country">国コード</label>
+        <input id="s-country" type="text" placeholder="JP" maxlength="2" style="background:var(--bg);text-transform:uppercase" />
+      </div>
+    </div>
+    <div class="settings-form-group">
+      <div class="form-group">
+        <label for="s-address1">住所 1</label>
+        <input id="s-address1" type="text" placeholder="桜丘町 1-1" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-form-group">
+      <div class="form-group">
+        <label for="s-address2">住所 2（建物名等）</label>
+        <input id="s-address2" type="text" placeholder="○○マンション 201" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-form-row">
+      <div class="form-group" style="flex:2">
+        <label for="s-city">市区町村</label>
+        <input id="s-city" type="text" placeholder="渋谷区" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-province">都道府県</label>
+        <input id="s-province" type="text" placeholder="東京都" style="background:var(--bg)" />
+      </div>
+    </div>
+    <button class="settings-save-btn" id="settings-save-btn">保存</button>
+  </div>
+</div>
+
+<!-- ── Shipping Info Modal ─────────────────────────────────────────────────────── -->
+<div id="shipping-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; z-index:1000">
+  <div class="payment-modal">
+    <div class="modal-header">
+      <h3>📦 配送先・連絡先を入力</h3>
+      <button class="modal-close" id="shipping-close-btn" title="閉じる">✕</button>
+    </div>
+    <p class="modal-desc">
+      AI が配送情報を求めています。情報を確認・入力して「チャットに送信」を押してください。
+    </p>
+    <div class="card-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sh-first-name">名</label>
+          <input id="sh-first-name" type="text" placeholder="Taro" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-last-name">姓</label>
+          <input id="sh-last-name" type="text" placeholder="Yamada" style="background:var(--bg)" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label for="sh-email">メール</label>
+          <input id="sh-email" type="email" placeholder="taro@example.com" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-phone">電話番号</label>
+          <input id="sh-phone" type="tel" placeholder="09000000000" style="background:var(--bg)" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="sh-address1">住所 1</label>
+        <input id="sh-address1" type="text" placeholder="渋谷区桜丘町 1-1" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="sh-address2">住所 2（建物名等）</label>
+        <input id="sh-address2" type="text" placeholder="○○マンション 201" style="background:var(--bg)" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sh-city">市区町村</label>
+          <input id="sh-city" type="text" placeholder="渋谷区" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-province">都道府県</label>
+          <input id="sh-province" type="text" placeholder="東京都" style="background:var(--bg)" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sh-postal">郵便番号</label>
+          <input id="sh-postal" type="text" placeholder="150-0044" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-country">国コード</label>
+          <input id="sh-country" type="text" placeholder="JP" maxlength="2" style="background:var(--bg);text-transform:uppercase" />
+        </div>
+      </div>
+    </div>
+    <button id="shipping-send-btn" class="modal-send-btn">チャットに送信</button>
+  </div>
+</div>
 
 <!-- ── Payment Modal ────────────────────────────────────────────────────────── -->
 <div id="payment-modal-overlay" style="display:none">
@@ -545,6 +746,23 @@ let chatHistory = [];
 let hasApiKey = false;
 let hasPaymentHandler = false;
 let lastCheckoutId = null;
+let shippingInfoSent = false;
+
+/* ── Buyer Profile (localStorage) ───────────────────────────────────────────── */
+const PROFILE_KEY = "ucp_buyer_profile";
+
+function loadBuyerProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "null") ?? {}; } catch { return {}; }
+}
+function saveBuyerProfile(p) {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+}
+function updateSettingsBtnBadge() {
+  const p = loadBuyerProfile();
+  const hasData = !!(p.first_name || p.email || p.address1);
+  const badge = document.getElementById("settings-profile-badge");
+  if (badge) badge.style.display = hasData ? "inline" : "none";
+}
 
 /* ── Init ───────────────────────────────────────────────────────────────────── */
 (async function init() {
@@ -607,6 +825,24 @@ let lastCheckoutId = null;
   document.getElementById("modal-card-cvc").addEventListener("input", function() {
     this.value = this.value.replace(/\D/g, "").slice(0, 4);
   });
+
+  // Settings modal events
+  document.getElementById("settings-open-btn").addEventListener("click", openSettingsModal);
+  document.getElementById("settings-close-btn").addEventListener("click", closeSettingsModal);
+  document.getElementById("settings-save-btn").addEventListener("click", saveSettingsAndClose);
+  document.getElementById("settings-modal-overlay").addEventListener("click", function(e) {
+    if (e.target === this) closeSettingsModal();
+  });
+
+  // Shipping modal events
+  document.getElementById("shipping-close-btn").addEventListener("click", closeShippingModal);
+  document.getElementById("shipping-send-btn").addEventListener("click", sendShippingInfo);
+  document.getElementById("shipping-modal-overlay").addEventListener("click", function(e) {
+    if (e.target === this) closeShippingModal();
+  });
+
+  // Show profile badge if already set
+  updateSettingsBtnBadge();
 
   // Check API status
   try {
@@ -782,7 +1018,7 @@ async function sendChat() {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message, history: chatHistory }),
+      body: JSON.stringify({ message, history: chatHistory, buyerProfile: loadBuyerProfile() }),
     });
     const result = await res.json();
 
@@ -803,6 +1039,15 @@ async function sendChat() {
           t => t.tool === "create_checkout" && !t.isError && t.output?.checkout?.payment_handlers,
         );
         if (checkoutCall) openPaymentModal(checkoutCall.output.id);
+      }
+
+      // AI が配送先情報を求めている場合、配送情報モーダルを表示
+      if (!shippingInfoSent && result.text) {
+        const shippingKws = ["住所", "配送先", "お名前", "氏名", "メールアドレス", "電話番号", "shipping address", "連絡先情報"];
+        const questionKws = ["教えて", "ください", "入力", "お知らせ", "必要", "提供", "教えていただ", "？", "?"];
+        const hasShipping = shippingKws.some(k => result.text.includes(k));
+        const hasQuestion = questionKws.some(k => result.text.includes(k));
+        if (hasShipping && hasQuestion) openShippingModal();
       }
     }
   } catch (err) {
@@ -956,6 +1201,102 @@ function showTokenResult(el, ok, html, token) {
   el.className = "token-result " + (ok ? "ok" : "err");
   el.innerHTML = html + (token ? `<code>${esc(token)}</code>` : "");
   el.style.display = "block";
+}
+
+/* ── Settings Modal ──────────────────────────────────────────────────────────── */
+function openSettingsModal() {
+  const p = loadBuyerProfile();
+  document.getElementById("s-first-name").value = p.first_name ?? "";
+  document.getElementById("s-last-name").value  = p.last_name  ?? "";
+  document.getElementById("s-email").value      = p.email      ?? "";
+  document.getElementById("s-phone").value      = p.phone      ?? "";
+  document.getElementById("s-postal").value     = p.postal     ?? "";
+  document.getElementById("s-city").value       = p.city       ?? "";
+  document.getElementById("s-address1").value   = p.address1   ?? "";
+  document.getElementById("s-address2").value   = p.address2   ?? "";
+  document.getElementById("s-province").value   = p.province   ?? "";
+  document.getElementById("s-country").value    = p.country    ?? "";
+  document.getElementById("settings-save-btn").textContent = "保存";
+  document.getElementById("settings-modal-overlay").style.display = "flex";
+}
+
+function closeSettingsModal() {
+  document.getElementById("settings-modal-overlay").style.display = "none";
+}
+
+function saveSettingsAndClose() {
+  const p = {
+    first_name: document.getElementById("s-first-name").value.trim(),
+    last_name:  document.getElementById("s-last-name").value.trim(),
+    email:      document.getElementById("s-email").value.trim(),
+    phone:      document.getElementById("s-phone").value.trim(),
+    postal:     document.getElementById("s-postal").value.trim(),
+    city:       document.getElementById("s-city").value.trim(),
+    address1:   document.getElementById("s-address1").value.trim(),
+    address2:   document.getElementById("s-address2").value.trim(),
+    province:   document.getElementById("s-province").value.trim(),
+    country:    document.getElementById("s-country").value.toUpperCase().trim(),
+  };
+  saveBuyerProfile(p);
+  updateSettingsBtnBadge();
+  const btn = document.getElementById("settings-save-btn");
+  btn.textContent = "✅ 保存しました";
+  setTimeout(() => closeSettingsModal(), 900);
+}
+
+/* ── Shipping Info Modal ─────────────────────────────────────────────────────── */
+function openShippingModal() {
+  const p = loadBuyerProfile();
+  document.getElementById("sh-first-name").value = p.first_name ?? "";
+  document.getElementById("sh-last-name").value  = p.last_name  ?? "";
+  document.getElementById("sh-email").value      = p.email      ?? "";
+  document.getElementById("sh-phone").value      = p.phone      ?? "";
+  document.getElementById("sh-postal").value     = p.postal     ?? "";
+  document.getElementById("sh-city").value       = p.city       ?? "";
+  document.getElementById("sh-address1").value   = p.address1   ?? "";
+  document.getElementById("sh-address2").value   = p.address2   ?? "";
+  document.getElementById("sh-province").value   = p.province   ?? "";
+  document.getElementById("sh-country").value    = p.country    ?? "";
+  document.getElementById("shipping-modal-overlay").style.display = "flex";
+}
+
+function closeShippingModal() {
+  document.getElementById("shipping-modal-overlay").style.display = "none";
+}
+
+function sendShippingInfo() {
+  const firstName = document.getElementById("sh-first-name").value.trim();
+  const lastName  = document.getElementById("sh-last-name").value.trim();
+  const email     = document.getElementById("sh-email").value.trim();
+  const phone     = document.getElementById("sh-phone").value.trim();
+  const postal    = document.getElementById("sh-postal").value.trim();
+  const address1  = document.getElementById("sh-address1").value.trim();
+  const address2  = document.getElementById("sh-address2").value.trim();
+  const city      = document.getElementById("sh-city").value.trim();
+  const province  = document.getElementById("sh-province").value.trim();
+  const country   = document.getElementById("sh-country").value.toUpperCase().trim();
+
+  const parts = ["以下の配送先・連絡先情報を使用してください："];
+  if (firstName || lastName) parts.push(`氏名: ${[firstName, lastName].filter(Boolean).join(" ")}`);
+  if (email)    parts.push(`メール: ${email}`);
+  if (phone)    parts.push(`電話番号: ${phone}`);
+  if (address1) parts.push(`住所1: ${address1}`);
+  if (address2) parts.push(`住所2: ${address2}`);
+  if (city)     parts.push(`市区町村: ${city}`);
+  if (province) parts.push(`都道府県: ${province}`);
+  if (postal)   parts.push(`郵便番号: ${postal}`);
+  if (country)  parts.push(`国コード: ${country}`);
+
+  if (parts.length > 1) {
+    const input = document.getElementById("chat-in");
+    if (input) {
+      input.value = parts.join("\n");
+      autoResizeTextarea(input);
+      input.focus();
+    }
+  }
+  closeShippingModal();
+  shippingInfoSent = true;
 }
 
 /* ── Utils ───────────────────────────────────────────────────────────────────── */

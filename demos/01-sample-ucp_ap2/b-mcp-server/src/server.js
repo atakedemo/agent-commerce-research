@@ -484,8 +484,29 @@ mcp.registerTool(
   async ({ meta, checkout }) => {
     const id = `co_${randomUUID()}`;
 
+    // UCP cart_id（"cart_xxx"）を Medusa cart_id に解決する。
+    // carts Map には { _medusa_id: "medusa_cart_yyy" } が格納されている。
+    let resolvedCheckout = checkout;
+    if (checkout.cart_id) {
+      const ucpCart = carts.get(checkout.cart_id);
+      if (ucpCart?._medusa_id) {
+        resolvedCheckout = { ...checkout, cart_id: ucpCart._medusa_id };
+      } else if (ucpCart && !ucpCart._medusa_id) {
+        // UCP カートが存在するが Medusa 未連携 → cart_id を除いてアイテムで再作成
+        resolvedCheckout = {
+          ...checkout,
+          cart_id: undefined,
+          line_items: ucpCart.line_items,
+        };
+      }
+    }
+
     let medusaCartId = null;
-    try { medusaCartId = await medusa.createCheckoutCart(checkout); } catch {}
+    try {
+      medusaCartId = await medusa.createCheckoutCart(resolvedCheckout);
+    } catch (e) {
+      console.error("[create_checkout] Medusa error:", e.message);
+    }
 
     const rec = recordForResponse(id, meta, checkout, "incomplete");
     if (medusaCartId) rec._medusa_cart_id = medusaCartId;
@@ -542,7 +563,8 @@ mcp.registerTool(
     if (prev.status === "canceled") return err({ error: "checkout_canceled", id });
 
     if (prev._medusa_cart_id) {
-      try { await medusa.updateCheckoutCart(prev._medusa_cart_id, checkout); } catch {}
+      try { await medusa.updateCheckoutCart(prev._medusa_cart_id, checkout); }
+      catch (e) { console.error("[update_checkout] Medusa error:", e.message); }
     }
 
     const merged = {
@@ -590,7 +612,16 @@ mcp.registerTool(
       try {
         const result = await medusa.completeCheckoutCart(prev._medusa_cart_id);
         orderId = result?.orderId ?? null;
-      } catch {}
+        if (orderId) {
+          console.log(`[complete_checkout] Medusa order created: ${orderId}`);
+        } else {
+          console.warn("[complete_checkout] Medusa complete returned no order id");
+        }
+      } catch (e) {
+        console.error("[complete_checkout] Medusa error:", e.message);
+      }
+    } else {
+      console.warn("[complete_checkout] _medusa_cart_id not set — Medusa skipped");
     }
 
     const done = {

@@ -145,7 +145,7 @@ app.post("/api/chat", async (req, res) => {
     return res.status(503).json({ ok: false, error: "GOOGLE_AI_STUDIO_API_KEY が設定されていません" });
   }
 
-  const { message, history = [] } = req.body;
+  const { message, history = [], buyerProfile = null } = req.body;
   if (!message?.trim()) {
     return res.status(400).json({ ok: false, error: "message is required" });
   }
@@ -161,10 +161,29 @@ app.post("/api/chat", async (req, res) => {
       parameters: cleanSchema(t.inputSchema),
     }));
 
+    // Build dynamic system prompt: inject buyer profile if provided
+    let systemInstruction = SYSTEM_PROMPT;
+    if (buyerProfile && (buyerProfile.first_name || buyerProfile.email || buyerProfile.address1)) {
+      const profileParts = ["Buyer profile (use this automatically in update_checkout — do not ask the user for this info):"];
+      const name = [buyerProfile.first_name, buyerProfile.last_name].filter(Boolean).join(" ");
+      if (name)               profileParts.push(`Name: ${name}`);
+      if (buyerProfile.email) profileParts.push(`Email: ${buyerProfile.email}`);
+      if (buyerProfile.phone) profileParts.push(`Phone: ${buyerProfile.phone}`);
+      const addr = {};
+      if (buyerProfile.address1) addr.address_1   = buyerProfile.address1;
+      if (buyerProfile.address2) addr.address_2   = buyerProfile.address2;
+      if (buyerProfile.city)     addr.city         = buyerProfile.city;
+      if (buyerProfile.province) addr.province     = buyerProfile.province;
+      if (buyerProfile.postal)   addr.postal_code  = buyerProfile.postal;
+      if (buyerProfile.country)  addr.country_code = buyerProfile.country.toLowerCase();
+      if (Object.keys(addr).length) profileParts.push(`Shipping address: ${JSON.stringify(addr)}`);
+      systemInstruction += `\n\n${profileParts.join("\n")}`;
+    }
+
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
     const model = genAI.getGenerativeModel({
       model: "gemini-3-flash-preview",
-      systemInstruction: SYSTEM_PROMPT,
+      systemInstruction,
       tools: [{ functionDeclarations }],
     });
 
