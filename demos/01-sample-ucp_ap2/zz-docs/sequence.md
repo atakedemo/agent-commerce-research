@@ -544,21 +544,49 @@ sequenceDiagram
         participant EC  as 既存ECサイト<br/>（Medusa）
     end
 
-    BE->>CP: POST /credential<br/>{ open_payment_mandate, closed_payment_mandate, checkout_hash }
+    BE->>CP: POST /credential<br/>{ open_payment_mandate (SD-JWT),<br/>  closed_payment_mandate (KB-SD-JWT),<br/>  checkout_hash }
 
     rect rgb(204,230,255)
-        Note over CP,TS: Payment Mandate チェーン検証
-        CP->>TS: GET /jwks（公開鍵取得）
+        Note over CP,TS: 【CP Step 1】Open Payment Mandate 検証
+        CP->>TS: GET /jwks（Trusted Surface 公開鍵を取得・5分キャッシュ）
         TS-->>CP: { keys: [JWK] }
-        Note over CP: 1. open_payment_mandate を TS 公開鍵で検証<br/>2. closed_payment_mandate を cnf.jwk（Agent 鍵）で検証<br/>3. 制約評価（amount_range / allowed_payees / allowed_payment_instruments）
+        Note over CP: ① TS 公開鍵（ES256）で署名を検証<br/>② vct == "mandate.payment.open.1" を確認
     end
 
-    CP-->>BE: { token: "ucp_tok_xxx", expiry, transaction_id }
+    rect rgb(204,230,255)
+        Note over CP: 【CP Step 2】Closed Payment Mandate 検証<br/>① cnf.jwk（Open Mandate 内の Agent 公開鍵）で署名を検証（ES256）<br/>② vct == "mandate.payment.1" を確認<br/>③ sd_hash 検証（Open-Closed バインド確認）:<br/>   SHA-256(open_payment_mandate) == closed.sd_hash<br/>   ✔ Closed Mandate が同一 Open Mandate に紐づくことを確認
+    end
 
-    Note over BE,MCP: complete_checkout — Checkout Mandate + Payment Credential を提示
-    BE->>MCP: complete_checkout( meta{idempotency-key}, id,<br/>checkout{ open_checkout_mandate,<br/>closed_checkout_mandate,<br/>payment_credential: "ucp_tok_xxx" } )
-    MCP->>EC: POST /store/carts/{id}/complete
-    EC-->>MCP: 注文確定
+    rect rgb(204,230,255)
+        Note over CP: 【CP Step 3】制約評価（Open Mandate の constraints フィールド）<br/>・payment.amount_range:<br/>   closed.payment_amount.amount ∈ [min, max]<br/>   通貨コード（currency）一致確認<br/>・payment.allowed_payees:<br/>   closed.payee.id / name が許可マーチャントリストに含まれるか<br/>・payment.allowed_payment_instruments:<br/>   closed.payment_instrument.id / type が許可支払手段リストに含まれるか
+    end
+
+    CP-->>BE: { token:"ucp_tok_xxx", expiry, transaction_id }<br/>（tokenStore に type:"credential", checkoutHash を記録）
+
+    BE->>MCP: complete_checkout( meta{idempotency-key}, id,<br/>  checkout{ payment:{ instruments:[<br/>    { type:"card",<br/>      credential:{ token:"ucp_tok_xxx" } }] } } )
+
+    rect rgb(255,240,204)
+        Note over MCP,CP: 【MCP → CP】/detokenize — AP2 Credential の同一セッション検証
+        MCP->>CP: POST /detokenize<br/>{ token:"ucp_tok_xxx",<br/>  binding:{ checkout_id:"co_xxx",<br/>            checkout_hash:"&lt;SHA-256(checkout_jwt)&gt;" } }
+        Note over CP: ① stored.type == "credential" を確認<br/>   （UCP /tokenize トークンと区別）<br/>② checkout_hash 一致確認:<br/>   stored.checkoutHash == binding.checkout_hash<br/>   ✔ /credential 呼び出し時と同一チェックアウトセッションを検証<br/>   （別チェックアウトへのクレデンシャル使い回しを防止）<br/>③ 単回使用: 検証成功後に tokenStore から即時削除
+        CP-->>MCP: { transaction_id, payment_amount,<br/>  payment_instrument, _ap2:true }
+    end
+
+    rect rgb(255,240,204)
+        Note over MCP,EC: 【EC バックエンド】注文確定処理（Medusa v2）
+        MCP->>EC: POST /store/shipping-options?cart_id={id}
+        EC-->>MCP: 配送オプション一覧
+        MCP->>EC: POST /store/carts/{id}/shipping-methods<br/>{ option_id }
+        EC-->>MCP: OK
+        MCP->>EC: POST /store/payment-collections<br/>{ cart_id }
+        EC-->>MCP: { payment_collection.id }
+        MCP->>EC: POST /store/payment-collections/{id}/payment-sessions<br/>{ provider_id:"pp_system_default" }
+        EC-->>MCP: OK
+        MCP->>EC: POST /store/carts/{id}/complete
+        Note over EC: ・在庫確認・確保<br/>・税計算・支払い登録<br/>・注文レコード生成（order_id 発行）
+        EC-->>MCP: { order:{ id:"order_xxx" } }
+    end
+
     MCP-->>BE: Checkout { status:"completed", order_id }
     BE-->>FE: 購入完了メッセージ
 ```

@@ -420,6 +420,192 @@
       border-radius: 4px;
     }
 
+    /* ── Chat Sub-tabs ── */
+    .sub-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--border);
+    }
+    .sub-tab-btn {
+      padding: 0.45rem 1.1rem;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      cursor: pointer;
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: var(--muted);
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .sub-tab-btn:hover { color: var(--text); }
+    .sub-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .sub-tab-pane { display: none; }
+    .sub-tab-pane.active { display: block; }
+
+    /* ── AP2 Panel ── */
+    .ap2-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .ap2-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.6rem;
+    }
+    .ap2-panel-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+    .ap2-session-badge {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.65rem;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .ap2-session-badge.active {
+      background: rgba(46,158,91,0.12);
+      color: #1a6b3a;
+      border: 1px solid rgba(46,158,91,0.3);
+    }
+    .ap2-session-badge.inactive {
+      background: rgba(120,120,120,0.08);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .ap2-panel-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+    .ap2-intent-form { display: flex; flex-direction: column; gap: 0.75rem; }
+    .ap2-intent-form .form-row { display: flex; gap: 0.75rem; }
+    .ap2-intent-form select {
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-family: inherit;
+      outline: none;
+      background: var(--bg);
+      width: 100%;
+    }
+    .ap2-init-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.55rem 1.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      align-self: flex-start;
+    }
+    .ap2-init-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ap2-init-result {
+      margin-top: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      display: none;
+    }
+    .ap2-init-result.ok  { background: rgba(46,158,91,0.08); border: 1px solid rgba(46,158,91,0.25); color: #1a6b3a; }
+    .ap2-init-result.err { background: rgba(217,48,37,0.08); border: 1px solid rgba(217,48,37,0.25); color: var(--red); }
+
+    /* AP2 credential badge in chat */
+    .ap2-cred-log {
+      margin-top: 0.25rem;
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      background: rgba(79,126,248,0.08);
+      border: 1px solid rgba(79,126,248,0.2);
+      border-radius: 4px;
+      color: var(--accent);
+      font-style: normal;
+    }
+    /* Tool call error detail block */
+    .tool-err-block {
+      margin-top: 0.25rem;
+      font-size: 0.7rem;
+      padding: 0.3rem 0.5rem;
+      background: rgba(217,48,37,0.07);
+      border: 1px solid rgba(217,48,37,0.25);
+      border-radius: 4px;
+      color: var(--red);
+      font-family: monospace;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+    .tool-err-block strong { font-weight: 600; }
+
+    /* ── Mandate display ── */
+    .mandate-block {
+      margin-top: 0.4rem;
+      border: 1px solid rgba(79,126,248,0.25);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 0.72rem;
+    }
+    .mandate-block summary {
+      padding: 0.35rem 0.6rem;
+      background: rgba(79,126,248,0.07);
+      cursor: pointer;
+      user-select: none;
+      font-weight: 600;
+      color: var(--accent);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .mandate-block summary::-webkit-details-marker { display: none; }
+    .mandate-section {
+      padding: 0.45rem 0.6rem;
+      border-top: 1px solid rgba(79,126,248,0.12);
+    }
+    .mandate-section-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.25rem;
+    }
+    .mandate-jwt {
+      font-family: monospace;
+      font-size: 0.62rem;
+      word-break: break-all;
+      background: var(--code-bg);
+      color: #cdd6f4;
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      max-height: 64px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .mandate-payload {
+      font-family: monospace;
+      font-size: 0.62rem;
+      background: #f6f8ff;
+      border: 1px solid rgba(79,126,248,0.12);
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      max-height: 110px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #333;
+      margin-top: 0.2rem;
+    }
+
     /* ── Chat toolbar ── */
     .chat-toolbar {
       display: flex;
@@ -563,12 +749,71 @@
 
   <!-- ── Chat Tab ── -->
   <div id="pane-chat" class="tab-pane">
-    <div class="chat-toolbar">
-      <button class="settings-btn" id="settings-open-btn">
-        ⚙️ 購入者情報設定<span class="profile-set-badge" id="settings-profile-badge" style="display:none">✓</span>
-      </button>
+    <!-- サブタブ -->
+    <div class="sub-tabs">
+      <button class="sub-tab-btn active" data-subtab="ucp">UCP フロー</button>
+      <button class="sub-tab-btn"        data-subtab="ap2">AP2 HNP フロー</button>
     </div>
-    <div id="chat-area"></div>
+
+    <!-- UCP フロー サブタブ -->
+    <div id="sub-pane-ucp" class="sub-tab-pane active">
+      <div class="chat-toolbar">
+        <button class="settings-btn" id="settings-open-btn">
+          ⚙️ 購入者情報設定<span class="profile-set-badge" id="settings-profile-badge" style="display:none">✓</span>
+        </button>
+      </div>
+      <div id="chat-area"></div>
+    </div>
+
+    <!-- AP2 HNP フロー サブタブ -->
+    <div id="sub-pane-ap2" class="sub-tab-pane">
+      <!-- AP2 前授権パネル -->
+      <div class="ap2-panel">
+        <div class="ap2-panel-header">
+          <div class="ap2-panel-title">🔑 AP2 前授権（Open Mandate）</div>
+          <div id="ap2-session-badge" class="ap2-session-badge inactive">未委任</div>
+        </div>
+        <p class="ap2-panel-desc">
+          購入前にショッピングエージェントへの委任状（Open Mandate）を Trusted Surface から発行します。<br>
+          エージェントはこの委任状の制約範囲内で自律的に購入を完了できます。
+        </p>
+        <div id="ap2-intent-form" class="ap2-intent-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="ap2-max-amount">最大金額（JPY）</label>
+              <input id="ap2-max-amount" type="number" value="50000" style="background:var(--bg)" />
+            </div>
+            <div class="form-group">
+              <label for="ap2-instrument">支払い手段</label>
+              <select id="ap2-instrument">
+                <option value="card_visa_4242">Visa ···· 4242</option>
+                <option value="card_mc_5555">Mastercard ···· 5555</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="ap2-merchant-id">許可マーチャント ID</label>
+              <input id="ap2-merchant-id" type="text" value="merchant_1" style="background:var(--bg)" />
+            </div>
+            <div class="form-group">
+              <label for="ap2-merchant-name">マーチャント名</label>
+              <input id="ap2-merchant-name" type="text" value="Demo Merchant" style="background:var(--bg)" />
+            </div>
+          </div>
+          <button class="ap2-init-btn" id="ap2-init-btn">🔑 委任を開始</button>
+        </div>
+        <div id="ap2-init-result" class="ap2-init-result"></div>
+      </div>
+
+      <!-- AP2 チャット -->
+      <div class="chat-toolbar" style="margin-top:0.25rem">
+        <button class="settings-btn" id="ap2-settings-open-btn">
+          ⚙️ 購入者情報設定<span class="profile-set-badge" id="ap2-settings-profile-badge" style="display:none">✓</span>
+        </button>
+      </div>
+      <div id="ap2-chat-area"></div>
+    </div>
   </div>
 </main>
 
@@ -742,11 +987,17 @@
 
 <script>
 /* ── State ──────────────────────────────────────────────────────────────────── */
-let chatHistory = [];
-let hasApiKey = false;
+let chatHistory    = [];
+let ap2ChatHistory = [];
+let hasApiKey         = false;
 let hasPaymentHandler = false;
-let lastCheckoutId = null;
-let shippingInfoSent = false;
+let hasTrustedSurface = false;
+let ap2SessionActive  = false;
+let lastCheckoutId    = null;
+let shippingInfoSent  = false;
+let ap2ShippingInfoSent = false;
+let ap2OpenPaymentMandate  = null;
+let ap2OpenCheckoutMandate = null;
 
 /* ── Buyer Profile (localStorage) ───────────────────────────────────────────── */
 const PROFILE_KEY = "ucp_buyer_profile";
@@ -766,13 +1017,23 @@ function updateSettingsBtnBadge() {
 
 /* ── Init ───────────────────────────────────────────────────────────────────── */
 (async function init() {
-  // Tab switching
+  // Main tab switching
   document.querySelectorAll(".tab-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
       document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById("pane-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  // Sub-tab switching (UCP / AP2)
+  document.querySelectorAll(".sub-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".sub-tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".sub-tab-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("sub-pane-" + btn.dataset.subtab).classList.add("active");
     });
   });
 
@@ -826,13 +1087,19 @@ function updateSettingsBtnBadge() {
     this.value = this.value.replace(/\D/g, "").slice(0, 4);
   });
 
-  // Settings modal events
+  // Settings modal events (UCP)
   document.getElementById("settings-open-btn").addEventListener("click", openSettingsModal);
   document.getElementById("settings-close-btn").addEventListener("click", closeSettingsModal);
   document.getElementById("settings-save-btn").addEventListener("click", saveSettingsAndClose);
   document.getElementById("settings-modal-overlay").addEventListener("click", function(e) {
     if (e.target === this) closeSettingsModal();
   });
+
+  // Settings modal events (AP2)
+  document.getElementById("ap2-settings-open-btn").addEventListener("click", openSettingsModal);
+
+  // AP2 init
+  document.getElementById("ap2-init-btn").addEventListener("click", initAp2Session);
 
   // Shipping modal events
   document.getElementById("shipping-close-btn").addEventListener("click", closeShippingModal);
@@ -847,8 +1114,10 @@ function updateSettingsBtnBadge() {
   // Check API status
   try {
     const status = await fetch("/api/status").then(r => r.json());
-    hasApiKey = status.gemini;
+    hasApiKey         = status.gemini;
     hasPaymentHandler = status.paymentHandler;
+    hasTrustedSurface = status.trustedSurface;
+    ap2SessionActive  = status.ap2SessionActive;
   } catch {}
 
   const badge = document.getElementById("api-badge");
@@ -869,6 +1138,8 @@ function updateSettingsBtnBadge() {
   }
 
   renderChatArea();
+  renderAp2ChatArea();
+  updateAp2SessionBadge();
 })();
 
 /* ── Demo Flow ───────────────────────────────────────────────────────────────── */
@@ -1028,9 +1299,7 @@ async function sendChat() {
       appendMsg(msgs, "sys", "エラー: " + esc(result.error));
     } else {
       chatHistory = result.history;
-      const log = result.toolCallLog?.length
-        ? `<div class="tool-log">🔧 ${result.toolCallLog.map(t => t.tool).join(" → ")}</div>`
-        : "";
+      const log = buildToolLog(result.toolCallLog);
       appendMsg(msgs, "bot", esc(result.text).replace(/\n/g, "<br>") + log);
 
       // create_checkout が呼ばれ payment_handlers が返った場合、カード入力モーダルを表示
@@ -1059,6 +1328,22 @@ async function sendChat() {
     msgs.scrollTop   = msgs.scrollHeight;
     input.focus();
   }
+}
+
+function buildToolLog(toolCallLog) {
+  if (!toolCallLog?.length) return "";
+  const line = toolCallLog.map(t =>
+    t.isError ? `❌ ${esc(t.tool)}` : `✓ ${esc(t.tool)}`
+  ).join(" → ");
+  let html = `<div class="tool-log">🔧 ${line}</div>`;
+  for (const t of toolCallLog.filter(t => t.isError)) {
+    const out = t.output ?? {};
+    const msg = out.detail
+      ? `${out.error ?? "error"}: ${out.detail}`
+      : JSON.stringify(out);
+    html += `<div class="tool-err-block">❌ <strong>${esc(t.tool)}</strong>: ${esc(msg)}</div>`;
+  }
+  return html;
 }
 
 function appendMsg(container, role, html, id) {
@@ -1141,7 +1426,7 @@ function modalSendToChat() {
   if (!modalIssuedToken) return;
   const input = document.getElementById("chat-in");
   if (input) {
-    input.value = `決済トークンが発行されました。このトークンで注文を確定してください。\ntoken: ${modalIssuedToken}`;
+    input.value = `決済トークンが発行されました。以下の checkout_id と token で注文を確定してください。\ncheckout_id: ${modalCheckoutId}\ntoken: ${modalIssuedToken}`;
     autoResizeTextarea(input);
     input.focus();
   }
@@ -1297,6 +1582,310 @@ function sendShippingInfo() {
   }
   closeShippingModal();
   shippingInfoSent = true;
+}
+
+/* ── AP2 HNP ─────────────────────────────────────────────────────────────────── */
+
+function updateAp2SessionBadge() {
+  const badge = document.getElementById("ap2-session-badge");
+  if (!badge) return;
+  if (ap2SessionActive) {
+    badge.textContent = "✅ 委任済み";
+    badge.className = "ap2-session-badge active";
+  } else {
+    badge.textContent = "未委任";
+    badge.className = "ap2-session-badge inactive";
+  }
+  // AP2 settings badge
+  const p = loadBuyerProfile();
+  const hasData = !!(p.first_name || p.email || p.address1);
+  const ap2Badge = document.getElementById("ap2-settings-profile-badge");
+  if (ap2Badge) ap2Badge.style.display = hasData ? "inline" : "none";
+}
+
+async function initAp2Session() {
+  const btn      = document.getElementById("ap2-init-btn");
+  const resultEl = document.getElementById("ap2-init-result");
+
+  const maxAmount    = parseInt(document.getElementById("ap2-max-amount").value || "50000", 10);
+  const instrumentId = document.getElementById("ap2-instrument").value;
+  const merchantId   = document.getElementById("ap2-merchant-id").value.trim() || "merchant_1";
+  const merchantName = document.getElementById("ap2-merchant-name").value.trim() || "Demo Merchant";
+
+  btn.disabled    = true;
+  btn.textContent = "⏳ 委任中...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/ap2/init", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: {
+          merchants: [{ id: merchantId, name: merchantName, website: "http://localhost:9000" }],
+          items:     [{ id: "prod_abc", title: "Shopping Item", quantity: 1 }],
+          amount_range: { max: maxAmount, min: 0, currency: "JPY" },
+          payment_instrument_id: instrumentId,
+        },
+      }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      resultEl.className = "ap2-init-result err";
+      resultEl.textContent = `エラー: ${esc(data.error ?? "不明なエラー")}`;
+      resultEl.style.display = "block";
+    } else {
+      ap2OpenPaymentMandate  = data.open_payment_mandate  ?? null;
+      ap2OpenCheckoutMandate = data.open_checkout_mandate ?? null;
+      const expiry = data.expires_at ? new Date(data.expires_at).toLocaleString("ja-JP") : "";
+      const mandateHtml = buildMandateBlock("Open Mandate（委任状）", [
+        ["Open Payment Mandate",  ap2OpenPaymentMandate],
+        ["Open Checkout Mandate", ap2OpenCheckoutMandate],
+      ]);
+      resultEl.className = "ap2-init-result ok";
+      resultEl.innerHTML = `✅ Open Mandate を発行しました（有効期限: ${esc(expiry)}）<br>エージェントに購入を依頼してください。${mandateHtml}`;
+      resultEl.style.display = "block";
+      ap2SessionActive = true;
+      ap2ChatHistory   = [];
+      ap2ShippingInfoSent = false;
+      updateAp2SessionBadge();
+      renderAp2ChatArea();
+      // フォームを折りたたむ
+      document.getElementById("ap2-intent-form").style.opacity = "0.5";
+      document.getElementById("ap2-intent-form").style.pointerEvents = "none";
+    }
+  } catch (err) {
+    resultEl.className = "ap2-init-result err";
+    resultEl.textContent = `通信エラー: ${esc(err.message)}`;
+    resultEl.style.display = "block";
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = ap2SessionActive ? "🔄 再委任" : "🔑 委任を開始";
+    if (ap2SessionActive) {
+      document.getElementById("ap2-intent-form").style.opacity = "";
+      document.getElementById("ap2-intent-form").style.pointerEvents = "";
+    }
+  }
+}
+
+function renderAp2ChatArea() {
+  const area = document.getElementById("ap2-chat-area");
+  if (!area) return;
+
+  if (!hasApiKey) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ GOOGLE_AI_STUDIO_API_KEY が設定されていません</h3>
+        <p>AP2 HNP チャットを使うには <code>GOOGLE_AI_STUDIO_API_KEY</code> を設定してください。</p>
+      </div>`;
+    return;
+  }
+
+  if (!hasTrustedSurface) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ TRUSTED_SURFACE_URL が設定されていません</h3>
+        <p>AP2 HNP フローを使うには <code>TRUSTED_SURFACE_URL=http://localhost:3300</code> を <code>c-ai-agent-app/.env</code> に追加してください。</p>
+        <p style="margin-top:.5rem">また <code>e-trusted_surface-wallet</code> を起動してください。</p>
+      </div>`;
+    return;
+  }
+
+  if (!ap2SessionActive) {
+    area.innerHTML = `
+      <div class="chat-notice" style="background:#f0f4ff;border-color:#c7d7f8;color:#3050a0">
+        <h3>🔑 まず委任を開始してください</h3>
+        <p>上の「AP2 前授権」パネルで「委任を開始」ボタンを押すと、エージェントへの委任状が発行されます。</p>
+      </div>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="chat-wrap">
+      <div class="chat-messages" id="ap2-chat-msgs">
+        <div class="msg sys"><div class="bubble">
+          AP2 HNP モードで起動しました。<br>
+          Open Mandate（委任状）が発行済みです。購入したい商品をお伝えください。
+        </div></div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="ap2-chat-in" rows="1" placeholder="例：ランニングシューズを買って&#10;Shift+Enter で改行、Enter で送信"></textarea>
+        <button class="send-btn" id="ap2-send-btn">送信</button>
+      </div>
+    </div>
+    <div class="chat-hint">
+      試してみる：
+      <span class="chip" onclick="fillAp2Chat(this)">ランニングシューズを 1 足購入して</span>
+      <span class="chip" onclick="fillAp2Chat(this)">Blue Running Shoes を探してチェックアウトまで完了して</span>
+    </div>`;
+
+  const input = document.getElementById("ap2-chat-in");
+  document.getElementById("ap2-send-btn").addEventListener("click", sendAp2Chat);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAp2Chat(); }
+  });
+  input.addEventListener("input", () => autoResizeTextarea(input));
+}
+
+function fillAp2Chat(chip) {
+  const input = document.getElementById("ap2-chat-in");
+  if (input) { input.value = chip.textContent.trim(); autoResizeTextarea(input); input.focus(); }
+}
+
+async function sendAp2Chat() {
+  const input   = document.getElementById("ap2-chat-in");
+  const sendBtn = document.getElementById("ap2-send-btn");
+  const msgs    = document.getElementById("ap2-chat-msgs");
+  const message = input?.value.trim();
+  if (!message || !msgs) return;
+
+  appendMsg(msgs, "user", esc(message).replace(/\n/g, "<br>"));
+  input.value = "";
+  autoResizeTextarea(input);
+  input.disabled   = true;
+  sendBtn.disabled = true;
+
+  const loadingId = "ap2ld-" + Date.now();
+  appendMsg(msgs, "bot", "⏳ 考え中...", loadingId);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const res = await fetch("/api/chat-ap2", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, history: ap2ChatHistory, buyerProfile: loadBuyerProfile() }),
+    });
+    const result = await res.json();
+    document.getElementById(loadingId)?.remove();
+
+    if (!result.ok) {
+      appendMsg(msgs, "sys", "エラー: " + esc(result.error));
+    } else {
+      ap2ChatHistory = result.history;
+
+      // AP2 credential 自動発行ログを目立たせる
+      const credLog    = result.toolCallLog?.find(t => t.tool === "AP2 /credential（自動発行）" && !t.isError);
+      const regularLog = result.toolCallLog?.filter(t => t.tool !== "AP2 /credential（自動発行）") ?? [];
+      let logHtml = buildToolLog(regularLog);
+      if (credLog) {
+        logHtml += `<div class="ap2-cred-log">🔐 AP2 Credential 自動発行: ${esc(credLog.output?.token?.slice(0,20) ?? "")}...</div>`;
+      }
+
+      // 決済完了時: complete_checkout 成功 + _display データがあればマンデートを表示
+      const completeCall = result.toolCallLog?.find(t => t.tool === "complete_checkout" && !t.isError);
+      const display = credLog?.output?._display;
+      if (completeCall && display) {
+        logHtml += buildMandateBlock("決済完了 Mandate 詳細", [
+          ["Checkout JWT",            display.checkout_jwt],
+          ["Open Payment Mandate",    display.open_payment_mandate],
+          ["Closed Payment Mandate",  display.closed_payment_mandate],
+          ["Open Checkout Mandate",   display.open_checkout_mandate],
+        ]);
+      }
+
+      appendMsg(msgs, "bot", esc(result.text).replace(/\n/g, "<br>") + logHtml);
+
+      // 配送先情報が求められていたらモーダルを表示
+      if (!ap2ShippingInfoSent && result.text) {
+        const shippingKws = ["住所", "配送先", "お名前", "氏名", "メールアドレス", "連絡先"];
+        const questionKws = ["教えて", "ください", "入力", "必要", "？", "?"];
+        const hasShipping = shippingKws.some(k => result.text.includes(k));
+        const hasQuestion = questionKws.some(k => result.text.includes(k));
+        if (hasShipping && hasQuestion) {
+          openAp2ShippingModal();
+        }
+      }
+    }
+  } catch (err) {
+    document.getElementById(loadingId)?.remove();
+    appendMsg(msgs, "sys", "通信エラー: " + esc(err.message));
+  } finally {
+    if (input)   { input.disabled   = false; input.focus(); }
+    if (sendBtn) sendBtn.disabled = false;
+    if (msgs)    msgs.scrollTop   = msgs.scrollHeight;
+  }
+}
+
+function openAp2ShippingModal() {
+  openShippingModal();
+  // sendShippingInfo の送信先を ap2-chat-in に向ける（既存の shipping modal を再利用）
+  const sendBtn = document.getElementById("shipping-send-btn");
+  const newBtn  = sendBtn.cloneNode(true);
+  sendBtn.parentNode.replaceChild(newBtn, sendBtn);
+  newBtn.addEventListener("click", () => {
+    sendAp2ShippingInfo();
+  });
+}
+
+function sendAp2ShippingInfo() {
+  const vals = {
+    firstName: document.getElementById("sh-first-name").value.trim(),
+    lastName:  document.getElementById("sh-last-name").value.trim(),
+    email:     document.getElementById("sh-email").value.trim(),
+    phone:     document.getElementById("sh-phone").value.trim(),
+    address1:  document.getElementById("sh-address1").value.trim(),
+    address2:  document.getElementById("sh-address2").value.trim(),
+    city:      document.getElementById("sh-city").value.trim(),
+    province:  document.getElementById("sh-province").value.trim(),
+    postal:    document.getElementById("sh-postal").value.trim(),
+    country:   document.getElementById("sh-country").value.toUpperCase().trim(),
+  };
+  const parts = ["以下の配送先・連絡先情報を使用してください："];
+  if (vals.firstName || vals.lastName) parts.push(`氏名: ${[vals.firstName, vals.lastName].filter(Boolean).join(" ")}`);
+  if (vals.email)    parts.push(`メール: ${vals.email}`);
+  if (vals.phone)    parts.push(`電話番号: ${vals.phone}`);
+  if (vals.address1) parts.push(`住所1: ${vals.address1}`);
+  if (vals.address2) parts.push(`住所2: ${vals.address2}`);
+  if (vals.city)     parts.push(`市区町村: ${vals.city}`);
+  if (vals.province) parts.push(`都道府県: ${vals.province}`);
+  if (vals.postal)   parts.push(`郵便番号: ${vals.postal}`);
+  if (vals.country)  parts.push(`国コード: ${vals.country}`);
+
+  if (parts.length > 1) {
+    const input = document.getElementById("ap2-chat-in");
+    if (input) { input.value = parts.join("\n"); autoResizeTextarea(input); input.focus(); }
+  }
+  closeShippingModal();
+  ap2ShippingInfoSent = true;
+  // shipping-send-btn を元に戻す
+  const newBtn = document.getElementById("shipping-send-btn");
+  if (newBtn) {
+    const orig = newBtn.cloneNode(true);
+    newBtn.parentNode.replaceChild(orig, newBtn);
+    orig.addEventListener("click", sendShippingInfo);
+  }
+}
+
+/* ── Mandate display helpers ──────────────────────────────────────────────────── */
+function decodeJwtPayload(token) {
+  try {
+    const parts = (token ?? "").split(".");
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(b64.padEnd(b64.length + (4 - b64.length % 4) % 4, "="));
+    return JSON.parse(json);
+  } catch { return null; }
+}
+
+function buildMandateSection(title, jwtToken) {
+  if (!jwtToken) return "";
+  const payload = decodeJwtPayload(jwtToken);
+  const payloadHtml = payload
+    ? `<div class="mandate-payload">${esc(JSON.stringify(payload, null, 2))}</div>`
+    : "";
+  return `
+    <div class="mandate-section">
+      <div class="mandate-section-title">${esc(title)}</div>
+      <div class="mandate-jwt">${esc(jwtToken)}</div>
+      ${payloadHtml}
+    </div>`;
+}
+
+function buildMandateBlock(title, sections) {
+  const inner = sections.map(([t, jwt]) => buildMandateSection(t, jwt)).join("");
+  if (!inner) return "";
+  return `<details class="mandate-block"><summary>🔐 ${esc(title)}</summary>${inner}</details>`;
 }
 
 /* ── Utils ───────────────────────────────────────────────────────────────────── */

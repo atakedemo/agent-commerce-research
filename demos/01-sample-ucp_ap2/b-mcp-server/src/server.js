@@ -65,11 +65,13 @@ const STRIPE_SECRET_KEY   = process.env.STRIPE_SECRET_KEY ?? null;
  * Calls d-payment-handler /detokenize to validate a UCP payment token.
  * Returns { payment_intent_id, payment_intent_status, amount, currency } or throws.
  */
-async function validatePaymentToken(token, checkoutId) {
+async function validatePaymentToken(token, checkoutId, checkoutHash) {
+  const binding = { checkout_id: checkoutId };
+  if (checkoutHash) binding.checkout_hash = checkoutHash;
   const res = await fetch(`${PAYMENT_HANDLER_URL}/detokenize`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token, binding: { checkout_id: checkoutId } }),
+    body: JSON.stringify({ token, binding }),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
@@ -611,7 +613,7 @@ mcp.registerTool(
       "Merge-update checkout fields (UCP OpenRPC: update_checkout §11).",
     inputSchema: z.object({
       meta: metaBase,
-      id: z.string(),
+      id: z.string().describe("The checkout session ID returned by create_checkout (the top-level 'id' field in the response)"),
       checkout: z.record(z.unknown()),
     }),
   },
@@ -642,7 +644,7 @@ mcp.registerTool(
       "Complete checkout / place order (UCP OpenRPC: complete_checkout §12). meta.idempotency-key required.",
     inputSchema: z.object({
       meta: metaWithIdempotency,
-      id: z.string(),
+      id: z.string().describe("The checkout session ID returned by create_checkout (the top-level 'id' field in the response)"),
       checkout: z.record(z.unknown()),
     }),
   },
@@ -656,7 +658,7 @@ mcp.registerTool(
     const instrument  = instruments[0];
     if (instrument?.credential?.token && PAYMENT_HANDLER_URL) {
       try {
-        const detoken = await validatePaymentToken(instrument.credential.token, id);
+        const detoken = await validatePaymentToken(instrument.credential.token, id, prev.checkout_hash);
         if (detoken?.payment_intent_id) {
           await confirmStripePaymentIntent(detoken.payment_intent_id);
         }

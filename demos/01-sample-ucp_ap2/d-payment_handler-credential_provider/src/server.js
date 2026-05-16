@@ -414,20 +414,60 @@ async function handleDetokenize(body) {
 
   const stored = tokenStore.get(token);
   if (!stored) {
-    return { status: 404, body: { error: "token_not_found" } };
+    return { status: 404, body: { error: "token_not_found", token } };
   }
 
   if (Date.now() > stored.expiresAt) {
     tokenStore.delete(token);
-    return { status: 410, body: { error: "token_expired" } };
+    return { status: 410, body: { error: "token_expired", token, checkout_id: stored.checkoutId } };
   }
 
-  if (binding?.checkout_id && stored.checkoutId !== binding.checkout_id) {
-    return { status: 403, body: { error: "binding_mismatch" } };
+  if (stored.type === "credential") {
+    // AP2 credential トークン: checkout_hash で同一チェックアウトセッションを検証する。
+    // checkout_hash は create_checkout が生成した Merchant-signed Checkout JWT の SHA-256。
+    if (binding?.checkout_hash && stored.checkoutHash && stored.checkoutHash !== binding.checkout_hash) {
+      return {
+        status: 403,
+        body: {
+          error:                    "checkout_hash_mismatch",
+          token,
+          token_checkout_hash:      stored.checkoutHash,
+          request_checkout_hash:    binding.checkout_hash,
+        },
+      };
+    }
+  } else {
+    // UCP tokenize トークン: checkout_id で一致を検証する。
+    if (binding?.checkout_id && stored.checkoutId !== binding.checkout_id) {
+      return {
+        status: 403,
+        body: {
+          error:                "binding_mismatch",
+          token,
+          token_checkout_id:    stored.checkoutId,
+          request_checkout_id:  binding.checkout_id,
+        },
+      };
+    }
   }
 
   // 単回使用: 成功したら即失効
   tokenStore.delete(token);
+
+  // AP2 credential トークンの場合はクレデンシャル情報を返す
+  if (stored.type === "credential") {
+    console.log(`[detokenize] AP2 credential token validated tx=${stored.transactionId}`);
+    return {
+      status: 200,
+      body: {
+        transaction_id:     stored.transactionId,
+        payment_amount:     stored.paymentAmount,
+        payment_instrument: stored.paymentInstrument,
+        _ap2:               true,
+        _mock:              stored.isMock,
+      },
+    };
+  }
 
   if (stored.isMock) {
     console.log(`[detokenize] mock token validated for PI=${stored.paymentIntentId}`);

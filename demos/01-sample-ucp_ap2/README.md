@@ -21,7 +21,7 @@ UCP（Universal Commerce Protocol）+ AP2（Agentic Payment Protocol）のデモ
 | パターン | 使用コンポーネント |
 |---|---|
 | **A. 最小構成**（UCP 疎通確認のみ） | `c-ai-agent-app` + `b-mcp-server`（自動） |
-| **B. 従来フロー**（Payment Handler 連携） | A + `d-payment_handler-credential_provider` |
+| **B. UCP単体フロー**（Payment Handler 連携） | A + `d-payment_handler-credential_provider` |
 | **C. AP2 HNP フロー**（全 AP2 コンポーネント） | B + `e-trusted_surface-wallet` |
 | **D. 完全構成**（実 EC バックエンド連携） | C + `a-sandbox-ec` |
 
