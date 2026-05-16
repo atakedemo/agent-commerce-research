@@ -1,0 +1,13 @@
+{
+  "name": "@ucp-research/trusted-surface-wallet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AP2 Trusted Surface — HNP フロー用オープン Mandate 署名サーバー",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

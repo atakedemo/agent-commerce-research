@@ -453,6 +453,151 @@ npm start
 ## 7. Assumptions
 
 - **MCP はマーチャントあたり単一 endpoint** を前提とする。**§1〜§3** の具体シーケンスは同一 MCP サーバー（同一接続）上の Tool 列として読む。Tool の入出力・例は [`mcp-reference.md`](mcp-reference.md) §3 以降。複数 MCP エンドポイントへ意図的に分割する構成は本書のスコープ外。
-- **認証・署名**（`meta.signature`、HTTP における `UCP-Agent` 相当）の厳密な検証は本デモでは未実装。規格上の必須/推奨は [UCP 仕様リポジトリ](https://github.com/Universal-Commerce-Protocol/ucp) 側の最新版に従う。
+- **認証・署名**: MCP レイヤーの認証は**クライアントクレデンシャルによるクライアント認証のみ**（ユーザー存在を前提とした認証フローは不使用）。`meta.signature`（HTTP における `UCP-Agent` 相当）の厳密な検証は本デモでは未実装。規格上の必須/推奨は [UCP 仕様リポジトリ](https://github.com/Universal-Commerce-Protocol/ucp) 側の最新版に従う。
 - **既存バックエンド**が Medusa の場合、UCP の `Checkout` JSON と Store API のカート/注文は **1:1 ではない**。本図は「MCP 層がアダプタとなり内部 API を呼ぶ」という責務分割のみ示し、フィールドマッピングは別タスクとする。
+- **AP2 HNP フロー（§8）**: Mandate の署名検証は ES256（ECDSA P-256）を使用。Trusted Surface の公開鍵は `GET /jwks` から取得。Agent は自身の鍵ペアでクローズド Mandate を署名し、オープン Mandate の `cnf.jwk` でバインドする。
+
+---
+
+## 8. AP2 HNP フロー（Human Not Present / 自律決済）
+
+[AP2 仕様](../../../../references/specification/community/AP2/docs/ap2/specification.md) に沿った Human Not Present フロー。ユーザーが事前に承認したオープン Mandate を基に、Shopping Agent が自律的に購入を完了する。
+
+アクター:
+- **User**: 購入意図を設定し、オープン Mandate を承認する（Phase 1a のみ在席）
+- **Shopping Agent（FE/BE）**: `c-ai-agent-app` — 自律的に購入を実行
+- **Trusted Surface（TS）**: `e-trusted_surface-wallet` — ユーザー同意を得てオープン Mandate に署名
+- **Merchant MCP**: `b-mcp-server` — UCP Shopping MCP + AP2 Checkout JWT 生成
+- **Credential Provider（CP）**: `d-payment_handler-credential_provider` — Payment Mandate を検証してクレデンシャル発行
+
+### Phase 1a — ユーザー在席時（Open Mandate の委任）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box rgb(240,248,255) 利用者・エージェント側
+        participant U   as ユーザー
+        participant FE  as Shopping Agent<br/>（フロントエンド）
+        participant BE  as Shopping Agent<br/>（バックエンド）
+    end
+    box rgb(255,240,255) Trusted Surface
+        participant TS  as Trusted Surface<br/>（e-trusted_surface-wallet）
+    end
+
+    U->>FE: 購入タスクと制約を設定<br/>（商品・金額上限・マーチャント等）
+    FE->>BE: Agent 鍵ペアを生成・Intent を構造化
+    Note over BE: ephemeral ECDSA P-256 鍵ペア生成<br/>agent_pk を Trusted Surface へ渡す
+    BE->>TS: POST /open-mandate<br/>{ agent_pk, intent: { merchants, items, amount_range, payment_instrument_id } }
+    Note over TS: ユーザーへ Mandate Content を表示<br/>同意確認後に user_sk で署名
+    TS-->>BE: { open_checkout_mandate (JWT),<br/>open_payment_mandate (JWT),<br/>wallet_public_key (JWK) }
+    BE-->>FE: オープン Mandate 取得完了
+    FE-->>U: 委任完了を通知（ユーザーはここで離席）
+```
+
+### Phase 1b — Human Not Present（自律ショッピング）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box rgb(240,248,255) 利用者・エージェント側
+        participant FE  as Shopping Agent<br/>（フロントエンド）
+        participant BE  as Shopping Agent<br/>（バックエンド）
+    end
+    box rgb(255,248,240) 既存ECサイト側
+        participant MCP as Merchant MCP<br/>（b-mcp-server）
+        participant EC  as 既存ECサイト<br/>（Medusa）
+    end
+
+    Note over BE,MCP: Phase 1a で取得したオープン Mandate を保持しながら自律実行
+    BE->>MCP: search_catalog / get_product
+    MCP-->>BE: 商品情報
+
+    BE->>MCP: create_cart / update_cart
+    MCP->>EC: POST /store/carts（Medusa）
+    EC-->>MCP: カート状態
+    MCP-->>BE: Cart（line_items 等）
+
+    BE->>MCP: create_checkout( meta, checkout )
+    MCP->>EC: カート・在庫確認
+    EC-->>MCP: 確認結果
+    Note over MCP: Agent Provider 鍵で checkout JWT を ES256 署名
+    MCP-->>BE: Checkout { id, checkout_jwt, checkout_hash,<br/>merchant_jwks, payment_handlers }
+
+    Note over BE: checkout_hash = SHA-256(checkout_jwt)<br/>クローズド Checkout Mandate を生成・署名<br/>クローズド Payment Mandate を生成・署名<br/>（agent_sk 使用、cnf.jwk = open mandate の値）
+```
+
+### Phase 2 — Human Not Present（自律決済）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box rgb(240,248,255) 利用者・エージェント側
+        participant FE  as Shopping Agent<br/>（フロントエンド）
+        participant BE  as Shopping Agent<br/>（バックエンド）
+    end
+    box rgb(230,240,255) Credential Provider
+        participant CP  as Credential Provider<br/>（d-payment_handler-credential_provider）
+        participant TS  as Trusted Surface JWKS<br/>（e-trusted_surface-wallet）
+    end
+    box rgb(255,248,240) 既存ECサイト側
+        participant MCP as Merchant MCP<br/>（b-mcp-server）
+        participant EC  as 既存ECサイト<br/>（Medusa）
+    end
+
+    BE->>CP: POST /credential<br/>{ open_payment_mandate, closed_payment_mandate, checkout_hash }
+
+    rect rgb(204,230,255)
+        Note over CP,TS: Payment Mandate チェーン検証
+        CP->>TS: GET /jwks（公開鍵取得）
+        TS-->>CP: { keys: [JWK] }
+        Note over CP: 1. open_payment_mandate を TS 公開鍵で検証<br/>2. closed_payment_mandate を cnf.jwk（Agent 鍵）で検証<br/>3. 制約評価（amount_range / allowed_payees / allowed_payment_instruments）
+    end
+
+    CP-->>BE: { token: "ucp_tok_xxx", expiry, transaction_id }
+
+    Note over BE,MCP: complete_checkout — Checkout Mandate + Payment Credential を提示
+    BE->>MCP: complete_checkout( meta{idempotency-key}, id,<br/>checkout{ open_checkout_mandate,<br/>closed_checkout_mandate,<br/>payment_credential: "ucp_tok_xxx" } )
+    MCP->>EC: POST /store/carts/{id}/complete
+    EC-->>MCP: 注文確定
+    MCP-->>BE: Checkout { status:"completed", order_id }
+    BE-->>FE: 購入完了メッセージ
+```
+
+### AP2 HNP の起動順序
+
+```bash
+# 1. Trusted Surface（Wallet）
+cd demos/01-sample-ucp_ap2/e-trusted_surface-wallet
+node src/server.js                # デフォルト: :3300
+
+# 2. Payment Handler + Credential Provider
+cd demos/01-sample-ucp_ap2/d-payment_handler-credential_provider
+TRUSTED_SURFACE_URL=http://localhost:3300 node src/server.js  # デフォルト: :3200
+
+# 3. MCP サーバー（b-mcp-server は c-ai-agent-app から自動起動）
+# 4. AI エージェントアプリ（c-ai-agent-app）
+```
+
+### 主要 API 一覧（AP2 HNP）
+
+| サーバー | エンドポイント | 用途 |
+|---|---|---|
+| `e-trusted_surface-wallet` | `GET /jwks` | Verifier（CP 等）が署名検証用公開鍵を取得 |
+| `e-trusted_surface-wallet` | `GET /instruments` | 登録済み支払い手段一覧（認証要: `x-api-key`） |
+| `e-trusted_surface-wallet` | `POST /open-mandate` | オープン Checkout + Payment Mandate の署名・発行（認証要） |
+| `d-payment_handler-credential_provider` | `POST /credential` | Payment Mandate チェーン検証・Payment Credential 発行 |
+| `d-payment_handler-credential_provider` | `POST /credential/verify` | 発行済み Credential token の内容確認（単回使用） |
+| `b-mcp-server` | `create_checkout` (MCP) | `checkout_jwt`（マーチャント ES256 署名 JWT）を含む応答を返す |
+
+### 環境変数（AP2 HNP 関連）
+
+| 変数 | サーバー | 説明 |
+|---|---|---|
+| `TRUSTED_SURFACE_PORT` | `e-trusted_surface-wallet` | ポート番号（デフォルト: 3300） |
+| `TRUSTED_SURFACE_API_KEY` | `e-trusted_surface-wallet` | クライアント認証用 API キー（未設定時は認証なし） |
+| `TRUSTED_SURFACE_ISSUER` | `e-trusted_surface-wallet` | Mandate の `iss` クレーム |
+| `MANDATE_TTL_SEC` | `e-trusted_surface-wallet` | オープン Mandate の有効期間（秒、デフォルト: 3600） |
+| `TRUSTED_SURFACE_URL` | `d-payment_handler-credential_provider` | Trusted Surface の URL（JWKS 取得先）。未設定時はモードで Mandate 署名検証をスキップ |
+| `MERCHANT_ID` | `b-mcp-server` | Checkout JWT に埋め込むマーチャント ID（デフォルト: `merchant_1`） |
+| `MERCHANT_NAME` | `b-mcp-server` | Checkout JWT に埋め込むマーチャント名（デフォルト: `Demo Merchant`） |
 

@@ -16,54 +16,103 @@
 
 ```
 01-sample-ucp_ap2/
-├── a-sandbox-ec/                # Medusa + Next.js モノレポ（デモ用 EC）
+├── a-sandbox-ec/                           # Medusa + Next.js モノレポ（デモ用 EC）
 │   ├── package.json
 │   ├── turbo.json
 │   └── apps/
-│       ├── backend/             # Medusa（Store/Admin API、シード等）
-│       └── storefront/          # Next.js 15 ストアフロント
-├── b-mcp-server/                # UCP Shopping に沿った MCP（stdio）
-│   └── src/server.js            # 12 Tool 実装・Medusa 連携・Payment Handler 連携
-├── c-ai-agent-app/              # AI エージェント UI（Express + Gemini）
+│       ├── backend/                        # Medusa（Store/Admin API、シード等）
+│       └── storefront/                     # Next.js 15 ストアフロント
+├── b-mcp-server/                           # UCP Shopping に沿った MCP（stdio）
+│   └── src/server.js                       # 12 Tool 実装・Medusa 連携・AP2 Checkout JWT 生成
+├── c-ai-agent-app/                         # AI エージェント UI（Express + Gemini）
 │   ├── src/
-│   │   ├── server.js            # Express サーバー（/api/demo・/api/chat・/api/tokenize）
-│   │   ├── shopping-flow.js     # デモ自動実行フロー（決済トークン発行ステップ含む）
-│   │   └── mcp-client.js        # b-mcp-server stdio クライアント
-│   └── public/index.html        # デモ UI（カード入力フォーム含む）
-├── d-payment-handler/           # UCP Payment Handler（Stripe ベースのトークン発行）
-│   └── src/server.js            # POST /tokenize・POST /detokenize・GET /health
+│   │   ├── server.js                       # Express サーバー（/api/demo・/api/chat・/api/tokenize）
+│   │   ├── shopping-flow.js                # デモ自動実行フロー（決済トークン発行ステップ含む）
+│   │   └── mcp-client.js                   # b-mcp-server stdio クライアント
+│   └── public/index.html                   # デモ UI（カード入力フォーム含む）
+├── d-payment_handler-credential_provider/  # UCP Payment Handler + AP2 Credential Provider
+│   └── src/server.js                       # POST /tokenize・/detokenize・/credential・/credential/verify
+├── e-trusted_surface-wallet/               # AP2 Trusted Surface（HNP オープン Mandate 署名）
+│   └── src/server.js                       # GET /jwks・/instruments  POST /open-mandate
 ├── references/
 │   └── ucp-shopping-mcp.openrpc.json
-└── docs/
-    ├── design-overview.md       # 本書
-    ├── sequence.md              # UCP 接続シーケンス（MCP 前提・Stripe 連携含む）
-    ├── mcp-reference.md         # MCP Tool 一覧・入力出力例
-    ├── api-reference.md         # HTTP Store / Admin と関連
+└── zz-docs/
+    ├── design-overview.md                  # 本書
+    ├── sequence.md                         # UCP + AP2 HNP シーケンス
+    ├── mcp-reference.md                    # MCP Tool 一覧・入力出力例
+    ├── api-reference.md                    # HTTP Store / Admin と関連
     ├── state-transition.md
     └── er.md
 ```
 
 ## システム構成（レイヤ構造）
 
+### 従来フロー（Human Present / UCP Stripe tokenization）
+
 - **Human チャネル（`a-sandbox-ec`）**: Next.js が `[countryCode]` を解釈し、`@medusajs/js-sdk` で Medusa Store API を呼ぶ。ミドルウェアでリージョンとクッキー。ここは従来のヘッドレス店頭であり、**MCP と直結しない**経路でも EC を利用できる。
 - **Agent チャネル（`c-ai-agent-app` + MCP）**: AI エージェントの UI アプリ（Express + Gemini）が **単一 MCP 接続**（`b-mcp-server`）で `search_catalog` / `get_product` / `lookup_catalog`、`create_cart` / `get_cart` / `update_cart` / `cancel_cart`、`create_checkout` / `get_checkout` / `update_checkout` / `complete_checkout` / `cancel_checkout` 等を順にまたは必要に応じて呼ぶ（論理順序の全体像は [`sequence.md`](sequence.md) §1〜§3）。
-- **Payment Handler チャネル（`d-payment-handler` + Stripe）**: `create_checkout` レスポンスの `payment_handlers` config を受け取った Platform（`c-ai-agent-app`）が **MCP の外側**で `d-payment-handler` の `POST /tokenize` を呼び出し、UCP トークン（`ucp_tok_*`）を発行する。`d-payment-handler` は内部で Stripe の `paymentIntents.create` を呼び出し、PaymentIntent ID と UCP トークンを紐付けて管理する。
+- **Payment Handler チャネル（`d-payment_handler-credential_provider` + Stripe）**: `create_checkout` レスポンスの `payment_handlers` config を受け取った Platform（`c-ai-agent-app`）が **MCP の外側**で `POST /tokenize` を呼び出し、UCP トークン（`ucp_tok_*`）を発行する。内部で Stripe の `paymentIntents.create` を呼び出し、PaymentIntent ID と UCP トークンを紐付けて管理する。
 - **MCP と既存 EC の関係**: MCP 実装が **アダプタ**として動き、内部的に Medusa の Store API（`POST /store/carts` など）へマッピングする想定。**UCP の `Checkout` と Medusa のカート/注文は 1:1 ではなく**（[`sequence.md`](sequence.md#7-assumptions)）、フィールド対応はアダプタ設計として別問題として扱う。`complete_checkout` 時は `/detokenize` で UCP トークンを検証し、Stripe PaymentIntent を確定（`/v1/payment_intents/{id}/confirm`）してから Medusa の注文確定を呼ぶ。
 - **`b-mcp-server` と Medusa**: [`mcp-reference.md`](mcp-reference.md) 冒頭の設計概要どおり、`EC_BACKEND_URL` と `EC_PUBLISHABLE_KEY` が揃っている場合、`create_checkout` の処理中などに **限定して** HTTP で Medusa と連携し、応答に `_ec_mirror` を載せられる。チェックアウト状態本体は開発用に **プロセス内メモリ**（再起動で消失）。
+
+### AP2 HNP フロー（Human Not Present / Agentic Payment Protocol v0.2）
+
+AP2 は、人間が不在のまま Agent が自律的に決済を完了するためのセキュリティプロトコル。MCP 認証は**クライアントクレデンシャルによるクライアント認証のみ**に限定し、ユーザー存在を前提とした認証フローは使用しない。
+
+| コンポーネント | 役割 | AP2 ロール |
+|---|---|---|
+| `e-trusted_surface-wallet` | ユーザーが事前承認したオープン Mandate を署名・発行 | Trusted Surface |
+| `b-mcp-server` | マーチャント署名付き Checkout JWT を生成・提供 | Merchant |
+| `d-payment_handler-credential_provider` | Payment Mandate を検証し Payment Credential を発行 | Credential Provider |
+| `c-ai-agent-app` | 自律的に Mandate Chain を構築・提示して購入を完了 | Shopping Agent |
+
+**Phase 1a — ユーザー在席時（Open Mandate の委任）**
+
+ユーザーが Shopping Agent に購入タスク（意図・制約）を設定し、Trusted Surface から署名付きオープン Mandate を取得する。Mandate には Agent の公開鍵（`cnf.jwk`）が埋め込まれ、以降は Agent のみが利用できる。
+
+- `e-trusted_surface-wallet POST /open-mandate` → `open_checkout_mandate` + `open_payment_mandate`（両方とも `vct: mandate.*.open.1`）
+
+**Phase 1b — Human Not Present（自律ショッピング）**
+
+Agent は Merchant の MCP を使いカートを組み、`create_checkout` で Merchant 署名付き `checkout_jwt` を取得する。Agent は Agent 秘密鍵でクローズド Mandate（`vct: mandate.checkout.1` / `mandate.payment.1`）を生成し、オープン Mandate と連鎖させる。
+
+- `b-mcp-server create_checkout` → `checkout_jwt` / `checkout_hash` / `merchant_jwks`
+
+**Phase 2 — Human Not Present（自律決済）**
+
+Agent は Payment Mandate チェーン（オープン + クローズド）を Credential Provider に提示して Payment Credential を取得し、Checkout Mandate と Credential を Merchant の MCP に渡してチェックアウトを完了する。
+
+- `d-payment_handler-credential_provider POST /credential` → `token`（Payment Credential）
+- `b-mcp-server complete_checkout` → `status: completed`
+
+詳細なシーケンスは [`sequence.md`](sequence.md) §8（AP2 HNP フロー）を参照。
 
 ## 処理の流れ（UCP／MCP 観点の要約）
 
 [`sequence.md`](sequence.md) と整合させた抽象は次のとおり。
 
+### 従来フロー（UCP + Stripe）
+
 | フェーズ | 主な MCP Tool / API（一例） | コメント |
 | -------- | ---------------------- | -------- |
 | 検索・詳細 | `search_catalog`、`get_product`（複数 ID は `lookup_catalog`） | `meta.ucp-agent.profile` 等、`meta` 必須（[`mcp-reference.md`](mcp-reference.md) §1）。 |
-| カート | なければ `create_cart`、あり得る経路として `get_cart` → **クライアント側で行マージ** → `update_cart` | **`update_cart` はカート全体の置換**（規格）；行を失わずに足すときは現状態を読んでから送る。[`cart.md`](../../../references/specification/community/ucp/docs/specification/cart.md) / [`sequence.md`](sequence.md) §2。 |
-| チェックアウト開始 | `create_checkout`（`cart_id` でカートから引き継ぎうる場合はプロファイル次第）、`update_checkout`、`get_checkout` | `create_checkout` レスポンスに `payment_handlers["dev.ucp.payment.stripe"]` が含まれる（`PAYMENT_HANDLER_URL` 設定時）。 |
-| **決済トークン発行**（MCP 外） | `d-payment-handler POST /tokenize` → Stripe `paymentIntents.create` | Platform（`c-ai-agent-app`）が `d-payment-handler` を直接呼び出す。Stripe PaymentIntent を作成し UCP トークン（`ucp_tok_*`）を返す。詳細は [`sequence.md`](sequence.md) §3 補足。 |
+| カート | なければ `create_cart`、あり得る経路として `get_cart` → **クライアント側で行マージ** → `update_cart` | **`update_cart` はカート全体の置換**（規格）；行を失わずに足すときは現状態を読んでから送る。 |
+| チェックアウト開始 | `create_checkout`、`update_checkout`、`get_checkout` | `create_checkout` レスポンスに `checkout_jwt`・`checkout_hash`（AP2）および `payment_handlers`（Stripe 連携時）が含まれる。 |
+| **決済トークン発行**（MCP 外） | `d-payment_handler-credential_provider POST /tokenize` → Stripe `paymentIntents.create` | Platform が直接呼び出す。Stripe PaymentIntent を作成し UCP トークン（`ucp_tok_*`）を返す。 |
 | チェックアウト完了 | `complete_checkout` | `meta.idempotency-key` 必須。`b-mcp-server` が内部で `/detokenize` → Stripe confirm → Medusa `/complete` の順に処理し、`order_id` を返す。 |
 
-役割のみの読み替え用の抽象シーケンスは [`sequence.md`](sequence.md) §4。
+### AP2 HNP フロー
+
+| フェーズ | API / Tool | コメント |
+| -------- | ---------- | -------- |
+| **オープン Mandate 取得**（HNP 前準備） | `e-trusted_surface-wallet POST /open-mandate` | Agent 公開鍵・制約を渡す。Trusted Surface がユーザー同意を得てオープン Mandate を ES256 署名して返す。 |
+| ショッピング | `b-mcp-server` 各 Tool（従来と同一） | カタログ・カート操作は同じ。 |
+| Checkout JWT 取得 | `create_checkout` | レスポンスに `checkout_jwt`（マーチャント ES256 署名 JWT）と `checkout_hash` が含まれる。 |
+| クローズド Mandate 生成 | Agent 内部処理 | Agent は Agent 秘密鍵で `mandate.checkout.1` / `mandate.payment.1` を署名。 |
+| **Payment Credential 取得** | `d-payment_handler-credential_provider POST /credential` | オープン + クローズド Payment Mandate を検証。制約評価後に Payment Credential token を発行。 |
+| チェックアウト完了 | `complete_checkout` | Checkout Mandate チェーンと Payment Credential token を含めて送信。 |
+
+役割のみの読み替え用の抽象シーケンスは [`sequence.md`](sequence.md) §4。AP2 HNP の詳細は [`sequence.md`](sequence.md) §8。
 
 規格側の詳細リンク（カタログ・カート）は [`sequence.md`](sequence.md) の冒頭（仕様リンク群）および、リポジトリルートの [`references/specification/community/ucp/`](../../../references/specification/community/ucp/) を参照できる。
 

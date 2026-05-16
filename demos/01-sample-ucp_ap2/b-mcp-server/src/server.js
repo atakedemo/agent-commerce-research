@@ -16,11 +16,45 @@
  *   checkout: create_checkout / get_checkout / update_checkout /
  *             complete_checkout / cancel_checkout
  */
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as medusa from "./medusa.js";
+
+// ─── Merchant 署名鍵（AP2 Checkout JWT 用）─────────────────────────────────────
+
+const { subtle } = globalThis.crypto;
+
+const MERCHANT_KEY_PAIR = await subtle.generateKey(
+  { name: "ECDSA", namedCurve: "P-256" },
+  true,
+  ["sign", "verify"],
+);
+
+const MERCHANT_KEY_ID     = "merchant-key-1";
+const MERCHANT_PUBLIC_JWK = {
+  ...(await subtle.exportKey("jwk", MERCHANT_KEY_PAIR.publicKey)),
+  kid: MERCHANT_KEY_ID,
+  use: "sig",
+  alg: "ES256",
+};
+
+/**
+ * ES256 署名付き JWT を生成する（AP2 Checkout JWT 用）。
+ */
+async function signMerchantJwt(payload) {
+  const header        = { alg: "ES256", typ: "JWT", kid: MERCHANT_KEY_ID };
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString("base64url");
+  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signingInput   = `${encodedHeader}.${encodedPayload}`;
+  const sigBuf         = await subtle.sign(
+    { name: "ECDSA", hash: { name: "SHA-256" } },
+    MERCHANT_KEY_PAIR.privateKey,
+    Buffer.from(signingInput),
+  );
+  return `${signingInput}.${Buffer.from(sigBuf).toString("base64url")}`;
+}
 
 // ─── Payment Handler config ────────────────────────────────────────────────────
 
@@ -524,6 +558,30 @@ mcp.registerTool(
         },
       };
     }
+
+    // AP2: マーチャント署名付き Checkout JWT を生成する
+    const merchantId = process.env.MERCHANT_ID ?? "merchant_1";
+    const checkoutJwtPayload = {
+      order_id: id,
+      merchant: {
+        id:      merchantId,
+        name:    process.env.MERCHANT_NAME    ?? "Demo Merchant",
+        website: process.env.EC_BACKEND_URL   ?? "http://localhost:9000",
+      },
+      line_items: (checkout.line_items ?? []).map((li, idx) => ({
+        id:       li.id ?? `line_${idx + 1}`,
+        variant:  { id: li.item?.id ?? li.variant_id ?? "unknown" },
+        quantity: li.quantity ?? 1,
+      })),
+      currency: "JPY",
+      iat:      Math.floor(Date.now() / 1000),
+    };
+    const checkoutJwt  = await signMerchantJwt(checkoutJwtPayload);
+    const checkoutHash = createHash("sha256").update(checkoutJwt).digest("base64url");
+
+    rec.checkout_jwt  = checkoutJwt;
+    rec.checkout_hash = checkoutHash;
+    rec.merchant_jwks = { keys: [MERCHANT_PUBLIC_JWK] };
 
     checkouts.set(id, rec);
     return ok(rec);
