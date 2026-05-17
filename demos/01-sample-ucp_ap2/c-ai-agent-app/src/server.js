@@ -55,6 +55,32 @@ async function signAp2Jwt(payload) {
 }
 
 /**
+ * create_checkout 成功後に自動で Closed Checkout Mandate を生成する。
+ * Closed Checkout Mandate は complete_checkout の ap2.checkout_mandate に使用する。
+ */
+async function createClosedCheckoutMandate(checkoutData) {
+  if (!_ap2Session?.openCheckoutMandate) return null;
+  try {
+    const sdHash  = createHash("sha256").update(_ap2Session.openCheckoutMandate).digest("base64url");
+    const payload = {
+      iss:                    "shopping-agent",
+      vct:                    "mandate.checkout.1",
+      iat:                    Math.floor(Date.now() / 1000),
+      exp:                    Math.floor(Date.now() / 1000) + 300,
+      jti:                    randomUUID(),
+      sd_hash:                sdHash,
+      checkout_id:            checkoutData.id,
+      checkout_hash:          checkoutData.checkout_hash ?? null,
+      merchant_authorization: checkoutData.checkout_jwt  ?? null,
+    };
+    return signAp2Jwt(payload);
+  } catch (e) {
+    console.error("[ap2/checkout-mandate] error:", e.message);
+    return null;
+  }
+}
+
+/**
  * create_checkout 成功後に自動で Closed Mandate を作成し Credential Provider に送信する。
  * 成功時は Credential レスポンス（token / expiry / transaction_id）を返す。
  */
@@ -144,7 +170,10 @@ Flow to follow:
 3. create_cart — create a cart with the chosen item
 4. create_checkout — start a checkout session. IMPORTANT: the response will contain an "ap2_credential" object with a "token" field. This is the payment credential issued automatically by the AP2 Credential Provider.
 5. update_checkout — add shipping info (email and shipping_address)
-6. complete_checkout — finalize using the credential: set checkout.payment.instruments = [{ type: "card", credential: { token: "<ap2_credential.token>" } }]
+6. complete_checkout — finalize the purchase with the AP2 extension:
+   - Set checkout.payment.instruments = [{ type: "card", credential: { token: "<ap2_credential.token from create_checkout response>" } }]
+   - Set top-level ap2 = { checkout_mandate: "<ap2_checkout_mandate from create_checkout response>" }
+   Both values are automatically injected into the create_checkout response.
 
 Rules:
 - Always include meta: { "ucp-agent": { "profile": "https://demo-agent.example/.well-known/ucp" } } in every tool call.
@@ -332,7 +361,7 @@ app.post("/api/chat", async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-preview-05-20",
+      model: "gemini-3-flash-preview",
       systemInstruction,
       tools: [{ functionDeclarations }],
     });
@@ -400,7 +429,7 @@ app.post("/api/chat-ap2", async (req, res) => {
 
     const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash-preview-05-20",
+      model: "gemini-3-flash-preview",
       systemInstruction,
       tools: [{ functionDeclarations }],
     });
@@ -420,9 +449,13 @@ app.post("/api/chat-ap2", async (req, res) => {
         const { isError, data } = await callTool(client, name, args);
         toolCallLog.push({ tool: name, input: args, output: data, isError });
 
-        // AP2: create_checkout 成功後に自動で Credential を発行してレスポンスに inject する
+        // AP2: create_checkout 成功後に自動で Credential と Checkout Mandate を発行してレスポンスに inject する
         if (name === "create_checkout" && !isError && data.checkout_hash) {
-          const cred = await requestAp2Credential(data);
+          const [cred, checkoutMandate] = await Promise.all([
+            requestAp2Credential(data),
+            createClosedCheckoutMandate(data),
+          ]);
+
           if (cred?.token) {
             const { _closed_mandate, ...credForAi } = cred;
             data.ap2_credential = credForAi;
@@ -432,12 +465,22 @@ app.post("/api/chat-ap2", async (req, res) => {
               output:  {
                 ...credForAi,
                 _display: {
-                  checkout_jwt:           data.checkout_jwt           ?? null,
+                  checkout_jwt:           data.checkout_jwt                ?? null,
                   open_payment_mandate:   _ap2Session?.openPaymentMandate  ?? null,
                   open_checkout_mandate:  _ap2Session?.openCheckoutMandate ?? null,
-                  closed_payment_mandate: _closed_mandate               ?? null,
+                  closed_payment_mandate: _closed_mandate                  ?? null,
                 },
               },
+              isError: false,
+            });
+          }
+
+          if (checkoutMandate) {
+            data.ap2_checkout_mandate = checkoutMandate;
+            toolCallLog.push({
+              tool:    "AP2 Checkout Mandate（自動生成）",
+              input:   { checkout_id: data.id, checkout_hash: data.checkout_hash },
+              output:  { ap2_checkout_mandate: checkoutMandate.substring(0, 60) + "…" },
               isError: false,
             });
           }

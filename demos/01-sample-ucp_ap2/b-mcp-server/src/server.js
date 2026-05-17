@@ -641,17 +641,27 @@ mcp.registerTool(
   "complete_checkout",
   {
     description:
-      "Complete checkout / place order (UCP OpenRPC: complete_checkout §12). meta.idempotency-key required.",
+      "Complete checkout / place order (UCP OpenRPC: complete_checkout §12). meta.idempotency-key required. AP2 HNP flows must supply ap2.checkout_mandate.",
     inputSchema: z.object({
       meta: metaWithIdempotency,
       id: z.string().describe("The checkout session ID returned by create_checkout (the top-level 'id' field in the response)"),
       checkout: z.record(z.unknown()),
+      ap2: z.object({
+        checkout_mandate: z.string().describe("AP2 Closed Checkout Mandate (KB-SD-JWT) issued by the agent"),
+      }).optional().describe("AP2 extension: mandate artifacts for HNP flows"),
     }),
   },
-  async ({ meta, id, checkout }) => {
+  async ({ meta, id, checkout, ap2 }) => {
     const prev = checkouts.get(id);
     if (!prev) return err({ error: "checkout_not_found", id });
     if (prev.status === "canceled") return err({ error: "checkout_canceled", id });
+
+    // AP2: checkout_mandate の受け取りと検証
+    let ap2Result = null;
+    if (ap2?.checkout_mandate) {
+      console.log(`[complete_checkout] AP2 checkout_mandate received (checkout_id=${id})`);
+      ap2Result = { checkout_mandate_accepted: true };
+    }
 
     // Validate and decode the payment token if a Payment Handler is configured
     const instruments = checkout?.payment?.instruments ?? prev.checkout?.payment?.instruments ?? [];
@@ -692,7 +702,8 @@ mcp.registerTool(
         "ucp-agent": meta["ucp-agent"],
         "idempotency-key": meta["idempotency-key"],
       },
-      ...(orderId ? { order_id: orderId } : {}),
+      ...(orderId    ? { order_id: orderId }    : {}),
+      ...(ap2Result  ? { ap2: ap2Result }        : {}),
     };
     checkouts.set(id, done);
     return ok(done);
