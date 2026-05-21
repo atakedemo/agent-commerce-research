@@ -30,7 +30,11 @@ const { subtle } = globalThis.crypto;
 // ─── AP2 セッション状態（サーバー起動中は in-memory で保持）─────────────────
 
 let _ap2Session = null;
-// { agentKeyPair, agentPubJwk, openPaymentMandate, openCheckoutMandate, expiresAt, intent }
+// { agentKeyPair, agentPubJwk, openPaymentMandate, openCheckoutMandate, expiresAt, intent, vpToken }
+
+// DC API リクエスト時に生成したエージェント鍵ペアを nonce で保持（init 時に引き継ぐ）
+let _pendingDcRequest = null;
+// { nonce, keyPair, agentPubJwk }
 
 const INSTRUMENT_MAP = {
   card_visa_4242: { id: "card_visa_4242", type: "card", description: "Visa ···· 4242" },
@@ -228,6 +232,97 @@ function resetAp2ChatClient() {
   _ap2ChatTools  = null;
 }
 
+// ── GET /api/ap2/dc-request ──────────────────────────────────────────────────
+//
+// CMWallet (agentic-dpc branch) 向け OpenID4VP リクエストを生成する。
+//   - dcql_query.credentials は配列形式、format: "dc+sd-jwt"、meta.vct_values: ["com.emvco.dpc"]
+//   - transaction_data に type:"delegate" のマンデート提案を base64url エンコードで格納
+//   - エージェント鍵ペアを生成し nonce で保持 → POST /api/ap2/init で引き継ぐ
+//
+// Query params:
+//   max_amount    最大金額 (JPY, 省略時 50000)
+//   merchant_id   マーチャント ID (省略時 merchant_1)
+//   merchant_name マーチャント名 (省略時 Demo Merchant)
+
+app.get("/api/ap2/dc-request", async (req, res) => {
+  try {
+    const nonce       = randomUUID();
+    const origin      = `${req.protocol}://${req.get("host")}`;
+    const maxAmount   = parseInt(req.query.max_amount   ?? "50000", 10);
+    const merchantId  = req.query.merchant_id   ?? "merchant_1";
+    const merchantName = req.query.merchant_name ?? "Demo Merchant";
+
+    // エージェント鍵ペアを生成し nonce に紐付けて保持
+    const keyPair     = await subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const agentPubJwk = await subtle.exportKey("jwk", keyPair.publicKey);
+    _pendingDcRequest = { nonce, keyPair, agentPubJwk };
+
+    const exp = Math.floor(Date.now() / 1000) + 3600;
+
+    // ── Checkout Mandate 提案 ──────────────────────────────────────────────
+    // checkout_hash はチェックアウト後に確定するため placeholder を使用。
+    // ウォレットはエージェント公開鍵（cnf.jwk）をマンデートに束縛して署名する。
+    const checkoutMandatePayload = {
+      vct:          "mandate.checkout.1",
+      exp,
+      cnf:          { jwk: agentPubJwk },
+      checkout_hash: "placeholder_hash_bound_at_complete_checkout",
+      checkout_jwt:  "",
+    };
+
+    // ── Payment Mandate 提案 ───────────────────────────────────────────────
+    // DPC SD-JWT VC（com.emvco.dpc）の payment_instrument を指定。
+    const paymentMandatePayload = {
+      vct:            "mandate.payment",
+      exp,
+      cnf:            { jwk: agentPubJwk },
+      transaction_id: randomUUID(),
+      payee:          { id: merchantId, name: merchantName },
+      payment_amount: { amount: maxAmount, currency: "JPY" },
+      payment_instrument: {
+        id:          "b3f1c8a2-6d4e-4f9a-9e3d-8a7c2f1b9d34",
+        type:        "dpc",
+        description: "DPC ···· 4444",
+      },
+    };
+
+    // ── delegate item を base64url エンコード（CMWallet 仕様）────────────
+    const delegateItem = {
+      type:                "delegate",
+      format:              "dc+sd-jwt",
+      credential_ids:      ["dpc_credential"],
+      delegate_payload:    [checkoutMandatePayload, paymentMandatePayload],
+      delegate_disclosures: [],
+    };
+    const transactionData = Buffer.from(JSON.stringify(delegateItem)).toString("base64url");
+
+    res.json({
+      nonce,
+      response_type:  "vp_token",
+      response_mode:  "dc_api",
+      client_id:      origin,
+      dcql_query: {
+        // credentials は配列形式（CMWallet DCQL 仕様）
+        credentials: [
+          {
+            id:     "dpc_credential",
+            format: "dc+sd-jwt",
+            meta:   { vct_values: ["com.emvco.dpc"] },
+            claims: [
+              { path: ["card_last_four"] },
+              { path: ["card_network_code"] },
+              { path: ["credential_id"] },
+            ],
+          },
+        ],
+      },
+      transaction_data: [transactionData],
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ── GET /api/status ──────────────────────────────────────────────────────────
 
 app.get("/api/status", (_req, res) => {
@@ -273,10 +368,19 @@ app.post("/api/ap2/init", async (req, res) => {
       error: "TRUSTED_SURFACE_URL が設定されていません。c-ai-agent-app/.env に TRUSTED_SURFACE_URL=http://localhost:3300 を追加してください。",
     });
   }
-  const { intent = {} } = req.body;
+  const { intent = {}, vp_token = null, nonce: reqNonce = null } = req.body;
   try {
-    const keyPair     = await subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-    const agentPubJwk = await subtle.exportKey("jwk", keyPair.publicKey);
+    // DC API リクエスト時に生成したキーペアを nonce で引き継ぐ（なければ新規生成）
+    let keyPair, agentPubJwk;
+    if (reqNonce && _pendingDcRequest?.nonce === reqNonce) {
+      keyPair          = _pendingDcRequest.keyPair;
+      agentPubJwk      = _pendingDcRequest.agentPubJwk;
+      _pendingDcRequest = null;
+      console.log("[ap2/init] agent keypair inherited from DC API request");
+    } else {
+      keyPair     = await subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+      agentPubJwk = await subtle.exportKey("jwk", keyPair.publicKey);
+    }
 
     const tsRes = await fetch(`${TRUSTED_SURFACE_URL}/open-mandate`, {
       method:  "POST",
@@ -296,15 +400,18 @@ app.post("/api/ap2/init", async (req, res) => {
       openCheckoutMandate: mandate.open_checkout_mandate,
       expiresAt:           mandate.expires_at,
       intent,
+      vpToken:             vp_token,
     };
     resetAp2ChatClient();
 
+    if (vp_token) console.log(`[ap2/init] vp_token received from DC API wallet`);
     console.log(`[ap2/init] session started, expires=${mandate.expires_at}`);
     res.json({
       ok:                   true,
       expires_at:           mandate.expires_at,
       open_payment_mandate:  mandate.open_payment_mandate  ?? null,
       open_checkout_mandate: mandate.open_checkout_mandate ?? null,
+      vp_token_received:     !!vp_token,
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

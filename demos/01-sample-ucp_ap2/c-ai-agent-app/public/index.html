@@ -326,6 +326,67 @@
     }
     .modal-send-btn:hover { opacity: 0.88; }
 
+    /* ── DCQL Preview Modal ── */
+    #dcql-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1100;
+    }
+    .dcql-modal {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.5rem;
+      max-width: 560px;
+      width: calc(100% - 2rem);
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.28);
+    }
+    .dcql-modal-body {
+      flex: 1;
+      overflow-y: auto;
+      margin: 0.75rem 0;
+    }
+    .dcql-modal pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 0;
+    }
+    .dcql-modal-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .dcql-modal-actions {
+      display: flex;
+      gap: 0.6rem;
+      margin-top: 0.75rem;
+    }
+    .dcql-modal-actions button {
+      flex: 1;
+      padding: 0.6rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+    }
+    #dcql-confirm-btn { background: var(--accent); color: #fff; }
+    #dcql-cancel-btn  { background: var(--bg); color: var(--text); border: 1px solid var(--border) !important; }
+    #dcql-confirm-btn:hover, #dcql-cancel-btn:hover { opacity: 0.85; }
+
     /* ── Payment Handler badge ── */
     .ph-badge {
       display: inline-flex;
@@ -510,6 +571,16 @@
       align-self: flex-start;
     }
     .ap2-init-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cmwallet-notice {
+      background: #fffbea;
+      border: 1px solid #f0d060;
+      border-radius: 6px;
+      padding: 0.55rem 0.75rem;
+      font-size: 0.78rem;
+      color: #7a5a00;
+      line-height: 1.55;
+      margin-bottom: 0.6rem;
+    }
     .ap2-init-result {
       margin-top: 0.75rem;
       padding: 0.65rem 0.9rem;
@@ -667,6 +738,31 @@
     .settings-form-row { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
     .settings-form-row .form-group { margin-top: 0; }
     .settings-form-group { margin-top: 0.75rem; }
+
+    /* ── DC API ── */
+    .dc-api-step {
+      margin-bottom: 0.75rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      border: 1px solid rgba(79,126,248,0.25);
+      background: rgba(79,126,248,0.05);
+    }
+    .dc-api-step-title {
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.2rem;
+      font-size: 0.78rem;
+    }
+    .dc-api-unsupported {
+      margin-top: 0.4rem;
+      padding: 0.35rem 0.6rem;
+      background: rgba(120,120,120,0.07);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
   </style>
 </head>
 <body>
@@ -801,6 +897,11 @@
               <input id="ap2-merchant-name" type="text" value="Demo Merchant" style="background:var(--bg)" />
             </div>
           </div>
+          <div class="cmwallet-notice" id="cmwallet-notice">
+            🪪 <strong>事前準備（Android）:</strong>
+            DPC クレデンシャルを発行したら、<strong>CMWallet アプリを一度起動</strong>してからボタンを押してください。
+            アプリを起動することでクレデンシャルが Android に登録され、ウォレット選択ダイアログに表示されます。
+          </div>
           <button class="ap2-init-btn" id="ap2-init-btn">🔑 委任を開始</button>
         </div>
         <div id="ap2-init-result" class="ap2-init-result"></div>
@@ -816,6 +917,27 @@
     </div>
   </div>
 </main>
+
+<!-- ── DCQL Preview Modal ─────────────────────────────────────────────────────── -->
+<div id="dcql-modal-overlay" style="display:none">
+  <div class="dcql-modal">
+    <div class="modal-header">
+      <h3>🔍 OID4VP リクエスト確認</h3>
+      <button class="modal-close" id="dcql-modal-close-btn" title="閉じる">✕</button>
+    </div>
+    <p class="dcql-modal-desc">
+      以下の DCQL クエリを含む OpenID4VP リクエストをウォレットに送信します。<br>
+      内容を確認して「実行」を押すと DC API が呼び出されます。
+    </p>
+    <div class="dcql-modal-body">
+      <pre id="dcql-preview-json"></pre>
+    </div>
+    <div class="dcql-modal-actions">
+      <button id="dcql-cancel-btn">キャンセル</button>
+      <button id="dcql-confirm-btn">▶ 実行</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Settings Modal ────────────────────────────────────────────────────────── -->
 <div id="settings-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; z-index:1000">
@@ -1603,6 +1725,146 @@ function updateAp2SessionBadge() {
   if (ap2Badge) ap2Badge.style.display = hasData ? "inline" : "none";
 }
 
+/* ── DC API ウォレット連携 ─────────────────────────────────────────────────── */
+
+/**
+ * CMWallet (agentic-dpc) 向け DC API プレゼンテーション。
+ * - /api/ap2/dc-request にインテント情報を渡してリクエストを生成
+ * - navigator.credentials.get() でウォレットに提示要求
+ * - vp_token と nonce（エージェント鍵引き継ぎ用）を返す
+ */
+function showDcqlPreviewModal(dcqlQuery) {
+  return new Promise((resolve) => {
+    document.getElementById("dcql-preview-json").textContent =
+      JSON.stringify(dcqlQuery, null, 2);
+    const overlay = document.getElementById("dcql-modal-overlay");
+    overlay.style.display = "flex";
+
+    function cleanup() { overlay.style.display = "none"; }
+
+    function onConfirm() {
+      cleanup();
+      resolve(true);
+    }
+    function onCancel() {
+      cleanup();
+      resolve(false);
+    }
+
+    document.getElementById("dcql-confirm-btn").onclick = onConfirm;
+    document.getElementById("dcql-cancel-btn").onclick  = onCancel;
+    document.getElementById("dcql-modal-close-btn").onclick = onCancel;
+    overlay.onclick = (e) => { if (e.target === overlay) onCancel(); };
+  });
+}
+
+async function tryDcApiPresentation(intentParams = {}) {
+  // if (typeof window.DigitalCredential === "undefined") {
+  //   return { supported: false, vpToken: null, rawData: null, nonce: null, error: "このブラウザは Digital Credentials API に対応していません" };
+  // }
+  try {
+    // インテント情報をクエリパラメータで渡す
+    const qs = new URLSearchParams({
+      ...(intentParams.maxAmount    != null ? { max_amount:    intentParams.maxAmount }    : {}),
+      ...(intentParams.merchantId              ? { merchant_id:   intentParams.merchantId }   : {}),
+      ...(intentParams.merchantName            ? { merchant_name: intentParams.merchantName } : {}),
+    }).toString();
+    const reqRes  = await fetch("/api/ap2/dc-request" + (qs ? "?" + qs : ""));
+    const presReq = await reqRes.json();
+    const dcNonce = presReq.nonce ?? null;  // エージェント鍵引き継ぎ用 nonce
+
+    // DCQL 確認ポップアップ
+    const confirmed = await showDcqlPreviewModal(presReq.dcql_query);
+    if (!confirmed) {
+      return { supported: true, vpToken: null, rawData: null, nonce: null, error: "ユーザーがキャンセルしました" };
+    }
+
+    const controller = new AbortController();
+    const dcResp = await navigator.credentials.get({
+      signal:  controller.signal,
+      digital: {
+        requests: [{
+          protocol: "openid4vp",
+          data: {
+            nonce:         presReq.nonce,
+            response_type: presReq.response_type,
+            response_mode: presReq.response_mode,
+            client_id:     presReq.client_id,
+            dcql_query: {
+              credentials: [
+                {
+                  id:     "dpc_credential",
+                  format: "dc+sd-jwt",
+                  meta:   { vct_values: ["com.emvco.dpc"] },
+                  claims: [
+                    { path: ["card_last_four"] },
+                    { path: ["card_network_code"] },
+                    { path: ["credential_id"] },
+                  ],
+                },
+              ],
+            },
+            transaction_data: presReq.transaction_data,
+          },
+        }],
+      },
+    });
+
+    let rawData = null;
+    let vpToken = null;
+    try {
+      rawData = typeof dcResp.data === "string" ? JSON.parse(dcResp.data) : dcResp.data;
+      // DCQL モード: vp_token はオブジェクト（キー = credential identifier）
+      // CMWallet は dSD-JWT チェーン形式で返す
+      const vt = rawData?.vp_token;
+      vpToken = vt && typeof vt === "object" ? Object.values(vt)[0] : (vt ?? null);
+    } catch { rawData = { raw: dcResp.data }; }
+
+    return { supported: true, vpToken, rawData, nonce: dcNonce, error: null };
+  } catch (e) {
+    const cancelled = e.name === "AbortError" || /cancel|dismiss/i.test(e.message ?? "");
+    return {
+      supported: true,
+      vpToken:   null,
+      rawData:   null,
+      nonce:     null,
+      error:     cancelled ? "ユーザーがキャンセルしました" : e.message,
+    };
+  }
+}
+
+function buildVpTokenBlock(vpToken) {
+  if (!vpToken) return "";
+  const isJwt = typeof vpToken === "string" && vpToken.split(".").length === 3;
+  let detailHtml = "";
+  if (isJwt) {
+    const payload = decodeJwtPayload(vpToken);
+    const payloadHtml = payload
+      ? `<div class="mandate-payload">${esc(JSON.stringify(payload, null, 2))}</div>`
+      : "";
+    detailHtml = `
+      <div class="mandate-section">
+        <div class="mandate-section-title">vp_token (SD-JWT)</div>
+        <div class="mandate-jwt">${esc(vpToken)}</div>
+        ${payloadHtml}
+      </div>`;
+  } else {
+    // mso_mdoc: CBOR-encoded base64url — show raw value, no JWT decode
+    const raw = typeof vpToken === "string" ? vpToken : JSON.stringify(vpToken);
+    detailHtml = `
+      <div class="mandate-section">
+        <div class="mandate-section-title">vp_token (mso_mdoc / CBOR)</div>
+        <div class="mandate-jwt" style="word-break:break-all">${esc(raw)}</div>
+        <div class="dc-api-unsupported" style="margin-top:0.3rem">CBOR エンコード済みデータのためブラウザ上でのデコード表示は省略</div>
+      </div>`;
+  }
+  return `
+    <details class="mandate-block" open>
+      <summary>🪪 DC API vp_token（ウォレット提示）</summary>
+      ${detailHtml}
+    </details>`;
+}
+
 async function initAp2Session() {
   const btn      = document.getElementById("ap2-init-btn");
   const resultEl = document.getElementById("ap2-init-result");
@@ -1613,12 +1875,39 @@ async function initAp2Session() {
   const merchantName = document.getElementById("ap2-merchant-name").value.trim() || "Demo Merchant";
 
   btn.disabled    = true;
-  btn.textContent = "⏳ 委任中...";
   resultEl.style.display = "none";
+
+  // ── Step 1: DC API ウォレット連携 ──────────────────────────────────────────
+  // インテント情報を渡すことでサーバー側のマンデート提案に反映する
+  btn.textContent = "⏳ ウォレット連携中...";
+  const dcResult  = await tryDcApiPresentation({
+    maxAmount:    maxAmount,
+    merchantId:   merchantId,
+    merchantName: merchantName,
+  });
+  const vpToken   = dcResult.vpToken ?? null;
+  const dcNonce   = dcResult.nonce   ?? null;
+
+  // DC API ステップの状態 HTML（後で init 結果と合わせて表示）
+  let dcApiHtml = "";
+  if (!dcResult.supported) {
+    dcApiHtml = `<div class="dc-api-step"><div class="dc-api-step-title">🔐 DC API ウォレット連携</div><div class="dc-api-unsupported">⚠️ DC API 非対応ブラウザのためスキップ（Open Mandate はサーバー側で発行）</div></div>`;
+  } else if (dcResult.error) {
+    const isCancelled = dcResult.error === "ユーザーがキャンセルしました";
+    const errMsg = isCancelled
+      ? `⚠️ ウォレット選択がキャンセルされました。「Your info wasn't found」が表示された場合は <strong>CMWallet アプリを一度起動</strong>してからお試しください。（Open Mandate はサーバー側で発行）`
+      : `⚠️ ${esc(dcResult.error)}（Open Mandate はサーバー側で発行）`;
+    dcApiHtml = `<div class="dc-api-step"><div class="dc-api-step-title">🔐 DC API ウォレット連携</div><div class="dc-api-unsupported">${errMsg}</div></div>`;
+  } else if (vpToken) {
+    dcApiHtml = buildVpTokenBlock(vpToken);
+  }
+
+  // ── Step 2: Open Mandate 発行 ──────────────────────────────────────────────
+  btn.textContent = "⏳ 委任状を発行中...";
 
   try {
     const res = await fetch("/api/ap2/init", {
-      method: "POST",
+      method:  "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         intent: {
@@ -1627,6 +1916,8 @@ async function initAp2Session() {
           amount_range: { max: maxAmount, min: 0, currency: "JPY" },
           payment_instrument_id: instrumentId,
         },
+        vp_token: vpToken,
+        nonce:    dcNonce,
       }),
     });
     const data = await res.json();
@@ -1644,14 +1935,13 @@ async function initAp2Session() {
         ["Open Checkout Mandate", ap2OpenCheckoutMandate],
       ]);
       resultEl.className = "ap2-init-result ok";
-      resultEl.innerHTML = `✅ Open Mandate を発行しました（有効期限: ${esc(expiry)}）<br>エージェントに購入を依頼してください。${mandateHtml}`;
+      resultEl.innerHTML = `✅ Open Mandate を発行しました（有効期限: ${esc(expiry)}）<br>エージェントに購入を依頼してください。${dcApiHtml}${mandateHtml}`;
       resultEl.style.display = "block";
       ap2SessionActive = true;
       ap2ChatHistory   = [];
       ap2ShippingInfoSent = false;
       updateAp2SessionBadge();
       renderAp2ChatArea();
-      // フォームを折りたたむ
       document.getElementById("ap2-intent-form").style.opacity = "0.5";
       document.getElementById("ap2-intent-form").style.pointerEvents = "none";
     }

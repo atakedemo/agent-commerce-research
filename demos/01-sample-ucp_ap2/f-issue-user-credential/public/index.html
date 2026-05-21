@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DPC Credential Issuer</title>
+  <style>
+    :root {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --border:  #2e3347;
+      --accent:  #4f7ef8;
+      --accent2: #34c28a;
+      --danger:  #e05c5c;
+      --text:    #e2e8f0;
+      --muted:   #8892a4;
+      --card-bg: #1a2f5e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    header { text-align: center; margin-bottom: 2rem; }
+    header h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.4rem; }
+    header p  { color: var(--muted); font-size: 0.9rem; }
+
+    .container { width: 100%; max-width: 560px; display: flex; flex-direction: column; gap: 1.2rem; }
+
+    /* ── Card preview ──────────────────────────────────────────────────────── */
+    .card-preview {
+      background: linear-gradient(135deg, var(--card-bg) 0%, #0d1e42 100%);
+      border-radius: 14px;
+      padding: 1.4rem 1.6rem;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(79,126,248,0.3);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .card-preview::after {
+      content: "";
+      position: absolute;
+      top: -40px; right: -40px;
+      width: 150px; height: 150px;
+      border-radius: 50%;
+      background: rgba(79,126,248,0.1);
+    }
+    .card-label { font-size: 0.7rem; color: rgba(255,255,255,0.5); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.6rem; }
+    .card-number { font-size: 1.1rem; letter-spacing: 0.18em; font-weight: 600; margin-bottom: 1rem; }
+    .card-meta { display: flex; gap: 1.4rem; }
+    .card-meta-item { display: flex; flex-direction: column; }
+    .card-meta-item .label { font-size: 0.65rem; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.06em; }
+    .card-meta-item .value { font-size: 0.85rem; font-weight: 600; margin-top: 0.15rem; }
+    .card-network { position: absolute; bottom: 1.2rem; right: 1.4rem; font-size: 0.95rem; font-weight: 700; color: rgba(255,255,255,0.7); }
+
+    /* ── Info box ───────────────────────────────────────────────────────────── */
+    .info-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      font-size: 0.83rem;
+      color: var(--muted);
+    }
+    .info-box strong { color: var(--text); }
+    .info-box ul { margin-top: 0.4rem; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.2rem; }
+
+    /* ── Issue button ───────────────────────────────────────────────────────── */
+    .btn-issue {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.85rem 1.2rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-issue:hover:not(:disabled) { opacity: 0.85; }
+    .btn-issue:active:not(:disabled) { transform: scale(0.98); }
+    .btn-issue:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Status / result ────────────────────────────────────────────────────── */
+    .status-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      font-size: 0.83rem;
+      display: none;
+    }
+    .status-box.visible { display: block; }
+    .status-box.success { border-color: var(--accent2); }
+    .status-box.error   { border-color: var(--danger); }
+    .status-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .status-title.success { color: var(--accent2); }
+    .status-title.error   { color: var(--danger); }
+    .status-title.info    { color: var(--accent); }
+    .status-body { color: var(--muted); line-height: 1.5; }
+    .status-body code {
+      background: rgba(255,255,255,0.06);
+      border-radius: 4px;
+      padding: 0.1rem 0.35rem;
+      font-size: 0.8rem;
+      font-family: "SF Mono", "Fira Mono", monospace;
+      color: var(--text);
+    }
+    pre.credential-raw {
+      margin-top: 0.7rem;
+      padding: 0.7rem;
+      background: rgba(0,0,0,0.3);
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-family: "SF Mono", "Fira Mono", monospace;
+      overflow-x: auto;
+      word-break: break-all;
+      white-space: pre-wrap;
+      color: var(--muted);
+      max-height: 200px;
+    }
+
+    /* ── Protocol support badge ─────────────────────────────────────────────── */
+    .support-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .support-badge.ok  { background: rgba(52,194,138,0.15); color: var(--accent2); border: 1px solid rgba(52,194,138,0.3); }
+    .support-badge.ng  { background: rgba(224,92,92,0.12);  color: var(--danger);  border: 1px solid rgba(224,92,92,0.25); }
+    .support-badge.unk { background: rgba(142,148,164,0.12); color: var(--muted);  border: 1px solid var(--border); }
+
+    .badge-row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+
+    footer { margin-top: 2.5rem; color: var(--muted); font-size: 0.75rem; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DPC Credential Issuer</h1>
+    <p>Digital Credentials API (openid4vci-v1) を使って DPC SD-JWT VC を発行します</p>
+  </header>
+
+  <div class="container">
+    <!-- Card preview -->
+    <div class="card-preview">
+      <div class="card-label">Demo Payment Card (DPC)</div>
+      <div class="card-number">•••• •••• •••• 4444</div>
+      <div class="card-meta">
+        <div class="card-meta-item">
+          <span class="label">VCT</span>
+          <span class="value" style="font-size:0.75rem;letter-spacing:0">com.emvco.dpc</span>
+        </div>
+        <div class="card-meta-item">
+          <span class="label">Network</span>
+          <span class="value">ACME</span>
+        </div>
+        <div class="card-meta-item">
+          <span class="label">Format</span>
+          <span class="value">dc+sd-jwt</span>
+        </div>
+      </div>
+      <div class="card-network">ACME</div>
+    </div>
+
+    <!-- Support status -->
+    <div class="info-box">
+      <div class="badge-row" id="supportBadges">
+        <strong>DC API サポート状況:</strong>
+        <span class="support-badge unk" id="badgeDcApi">確認中…</span>
+        <span class="support-badge unk" id="badgeOid4vci">openid4vci-v1: 確認中…</span>
+      </div>
+    </div>
+
+    <!-- Credential info -->
+    <div class="info-box">
+      <strong>発行するクレデンシャル</strong>
+      <ul>
+        <li><code>iss</code>: https://digital-credentials.dev</li>
+        <li><code>vct</code>: com.emvco.dpc</li>
+        <li><code>card_last_four</code>: 4444</li>
+        <li><code>card_network_code</code>: ACME</li>
+        <li><code>credential_id</code>: b3f1c8a2-…-8a7c2f1b9d34</li>
+      </ul>
+    </div>
+
+    <!-- Issue button -->
+    <button class="btn-issue" id="btnIssue" disabled>
+      <span id="btnLabel">クレデンシャルを発行</span>
+    </button>
+
+    <!-- Status area -->
+    <div class="status-box" id="statusBox">
+      <div class="status-title" id="statusTitle"></div>
+      <div class="status-body" id="statusBody"></div>
+    </div>
+  </div>
+
+  <footer>
+    CMWallet (agentic-dpc branch) を Android デバイスにインストールしてからお試しください。
+    Android エミュレータからは <code>http://10.0.2.2:4000</code> でアクセスできます。
+  </footer>
+
+  <script>
+    const btn        = document.getElementById("btnIssue");
+    const btnLabel   = document.getElementById("btnLabel");
+    const statusBox  = document.getElementById("statusBox");
+    const statusTitle = document.getElementById("statusTitle");
+    const statusBody  = document.getElementById("statusBody");
+    const badgeDcApi  = document.getElementById("badgeDcApi");
+    const badgeOid4vci = document.getElementById("badgeOid4vci");
+
+    function esc(s) {
+      return String(s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function showStatus(type, title, bodyHtml) {
+      statusBox.className = "status-box visible " + type;
+      statusTitle.className = "status-title " + type;
+      statusTitle.textContent = title;
+      statusBody.innerHTML = bodyHtml;
+    }
+
+    // ── Feature detection ────────────────────────────────────────────────────
+    let dcApiAvailable = false;
+
+    function checkSupport() {
+      // const hasDc = typeof window.DigitalCredential !== "undefined";
+      // if (!hasDc) {
+      //   badgeDcApi.textContent = "DC API: 非対応";
+      //   badgeDcApi.className = "support-badge ng";
+      //   badgeOid4vci.textContent = "openid4vci-v1: 非対応";
+      //   badgeOid4vci.className = "support-badge ng";
+      //   btn.disabled = false;
+      //   btnLabel.textContent = "クレデンシャルを発行（DC API 非対応 — シミュレーション）";
+      //   showStatus("info", "ℹ️ DC API 非対応ブラウザ", [
+      //     "このブラウザは <code>DigitalCredential</code> API に対応していません。",
+      //     "Chrome 143 以降 + Google Play Services 24.0 以降の Android デバイスが必要です。",
+      //     "<br><br>",
+      //     "ボタンを押すとサーバー側の OID4VCI フローをシミュレーションし、",
+      //     "発行される SD-JWT VC の内容を確認できます。",
+      //   ].join(""));
+      //   return;
+      // }
+      badgeDcApi.textContent = "DC API: 対応";
+      badgeDcApi.className = "support-badge ok";
+
+      // const hasProto = typeof DigitalCredential.userAgentAllowsProtocol === "function"
+      //   && DigitalCredential.userAgentAllowsProtocol("openid4vci-v1");
+      // if (hasProto) {
+        badgeOid4vci.textContent = "openid4vci-v1: 対応";
+        badgeOid4vci.className = "support-badge ok";
+        dcApiAvailable = true;
+      // } else {
+      //   badgeOid4vci.textContent = "openid4vci-v1: 非対応";
+      //   badgeOid4vci.className = "support-badge ng";
+      // }
+
+      btn.disabled = false;
+      if (!dcApiAvailable) {
+        btnLabel.textContent = "クレデンシャルを発行（openid4vci-v1 非対応 — シミュレーション）";
+      }
+    }
+
+    // ── Simulate flow (non-DC API path) ─────────────────────────────────────
+    async function simulateIssuance() {
+      showStatus("info", "⏳ OID4VCI フローを実行中…", "サーバーから credential offer を取得しています…");
+
+      const offerRes = await fetch("/api/credential-offer");
+      const offer = await offerRes.json();
+      const preAuthCode = offer.grants?.["urn:ietf:params:oauth:grant-type:pre-authorized_code"]?.["pre-authorized_code"];
+
+      showStatus("info", "⏳ トークンを取得中…", "pre-authorized_code でトークンを要求しています…");
+
+      const tokenRes = await fetch("/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
+          "pre-authorized_code": preAuthCode,
+        }),
+      });
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok) throw new Error(tokenData.error_description ?? tokenData.error ?? "Token request failed");
+
+      showStatus("info", "⏳ クレデンシャルを取得中…", "credential エンドポイントにリクエストを送信しています…");
+
+      const credRes = await fetch("/credential", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "authorization": `Bearer ${tokenData.access_token}`,
+        },
+        body: JSON.stringify({ format: "dc+sd-jwt" }),
+      });
+      const credData = await credRes.json();
+      if (!credRes.ok) throw new Error(credData.error ?? "Credential request failed");
+
+      return credData.credential;
+    }
+
+    // ── DC API issuance ──────────────────────────────────────────────────────
+    async function dcApiIssuance() {
+      showStatus("info", "⏳ Credential Offer を生成中…", "サーバーから credential offer を取得しています…");
+
+      const offerRes = await fetch("/api/credential-offer");
+      const credentialOffer = await offerRes.json();
+
+      showStatus("info", "⏳ ウォレットを起動中…",
+        "Digital Credentials API <code>navigator.credentials.create()</code> を呼び出しています。<br>" +
+        "ウォレット選択ダイアログが表示されたら CMWallet を選択してください。"
+      );
+
+      const result = await navigator.credentials.create({
+        digital: {
+          requests: [{
+            protocol: "openid4vci-v1",
+            data: credentialOffer,
+          }],
+        },
+      });
+
+      return result;
+    }
+
+    // ── Main handler ─────────────────────────────────────────────────────────
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btnLabel.textContent = "⏳ 発行中…";
+
+      try {
+        if (dcApiAvailable) {
+          // DC API path
+          const result = await dcApiIssuance();
+          showStatus("success", "✅ クレデンシャル発行完了",
+            "ウォレットへのクレデンシャル発行が完了しました。<br><br>" +
+            "DC API レスポンス:<br>" +
+            `<pre class="credential-raw">${esc(JSON.stringify(result, null, 2))}</pre>`
+          );
+        } else {
+          // Simulation path
+          const credential = await simulateIssuance();
+          const parts = credential.split("~")[0].split(".");
+          let payloadInfo = "";
+          try {
+            const raw = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+            payloadInfo =
+              `<code>iss</code>: ${esc(raw.iss)}<br>` +
+              `<code>vct</code>: ${esc(raw.vct)}<br>` +
+              `<code>exp</code>: ${new Date(raw.exp * 1000).toISOString()}<br>`;
+          } catch {}
+
+          showStatus("success", "✅ シミュレーション発行完了（DC API 非対応）",
+            "OID4VCI フローが正常に完了しました。<br><br>" +
+            payloadInfo +
+            "<br>SD-JWT (先頭 120 文字):<br>" +
+            `<pre class="credential-raw">${esc(credential.slice(0, 120) + "…")}</pre>` +
+            `<details style="margin-top:0.5rem"><summary style="cursor:pointer;color:var(--accent);font-size:0.8rem">完全な SD-JWT を表示</summary>` +
+            `<pre class="credential-raw">${esc(credential)}</pre></details>`
+          );
+        }
+      } catch (e) {
+        const msg = e.message ?? String(e);
+        const cancelled = e.name === "AbortError" || /cancel|dismiss/i.test(msg);
+        // CMWallet (agentic-dpc) はクレデンシャルをウォレットに保存した後、
+        // DC API への完了レスポンスを返さないため "Error retrieving token" をスローする。
+        // 発行自体は成功しているので success 扱いにする。
+        const issuedWithoutResponse = dcApiAvailable && /retrieving.*token|token.*retriev/i.test(msg);
+        if (issuedWithoutResponse) {
+          showStatus("success", "✅ クレデンシャル発行完了",
+            "CMWallet へのクレデンシャル発行が完了しました。<br>" +
+            "（DC API の完了レスポンスは未実装のため、ウォレットアプリで受信を確認してください）"
+          );
+        } else if (cancelled) {
+          showStatus("info", "ℹ️ キャンセルされました", "ウォレット選択がキャンセルされました。");
+        } else {
+          showStatus("error", "❌ エラー", esc(msg));
+        }
+      } finally {
+        btn.disabled = false;
+        btnLabel.textContent = dcApiAvailable
+          ? "クレデンシャルを発行"
+          : "クレデンシャルを発行（DC API 非対応 — シミュレーション）";
+      }
+    });
+
+    checkSupport();
+  </script>
+</body>
+</html>

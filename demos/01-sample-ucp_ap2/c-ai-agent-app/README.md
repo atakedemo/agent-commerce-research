@@ -100,6 +100,49 @@ GOOGLE_AI_STUDIO_API_KEY=AIza... npm start
 
 ---
 
+## Android デバイスでのテスト（DC API / ngrok）
+
+AP2 HNP フローの「委任を開始」ボタンは `navigator.credentials.get()` を使って Android ウォレット（CMWallet）と連携します。Android 上の Chrome では HTTPS が必要なため、ngrok でローカルサーバーを公開します。
+
+### 手順
+
+#### 1. ngrok のインストール（未インストールの場合）
+
+```bash
+brew install ngrok
+```
+
+#### 2. サーバーと ngrok を同時に起動
+
+```bash
+cd demos/01-sample-ucp_ap2/c-ai-agent-app
+npm run start:ngrok
+```
+
+サーバーと ngrok が同一ターミナルで起動し、ngrok の出力に HTTPS URL が表示されます：
+
+```
+[ngrok] Forwarding  https://xxxx-xx-xx-xx-xx.ngrok-free.app -> http://localhost:3100
+```
+
+> **別々に起動したい場合**
+> ```bash
+> # ターミナル 1
+> npm start
+> # ターミナル 2
+> ngrok http 3100
+> ```
+
+#### 4. Android デバイスの Chrome でアクセス
+
+```
+https://xxxx-xx-xx-xx-xx.ngrok-free.app
+```
+
+AP2 HNP フローで「委任を開始」を押すとウォレット選択ダイアログが表示され、CMWallet と連携できます。
+
+---
+
 ## アプリ構成
 
 ```

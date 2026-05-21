@@ -1,0 +1,20 @@
+{
+  "name": "@ucp-research/f-issue-user-credential",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OID4VCI credential issuer demo that issues a DPC SD-JWT VC via the Digital Credentials API.",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:ngrok": "concurrently --names \"server,ngrok\" --prefix-colors \"cyan,yellow\" \"node src/server.js\" \"ngrok http ${PORT:-4000}\""
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

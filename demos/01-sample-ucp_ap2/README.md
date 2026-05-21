@@ -11,6 +11,7 @@ UCP（Universal Commerce Protocol）+ AP2（Agentic Payment Protocol）のデモ
 | `c-ai-agent-app/` | AI エージェントアプリ（デモフロー UI + Gemini AI チャット） | `:3100` |
 | `d-payment_handler-credential_provider/` | UCP Payment Handler + AP2 Credential Provider | `:3200` |
 | `e-trusted_surface-wallet/` | AP2 Trusted Surface（Open Mandate 発行・JWKS 公開） | `:3300` |
+| `f-issue-user-credential/` | DPC クレデンシャル発行サイト（DC API / OID4VCI） | `:4000` |
 
 ---
 
@@ -229,6 +230,35 @@ Publishable API Key の取得: `http://localhost:9000/app` → Settings → Publ
 
 ---
 
+## f-issue-user-credential — DPC クレデンシャル発行サイト
+
+AP2 HNP フローで CMWallet に DPC クレデンシャルをインストールするための発行サイトです。  
+Digital Credentials API（`openid4vci-v1`）を使い、CMWallet テストデータの DPC SD-JWT VC を発行します。
+
+### セットアップ
+
+```bash
+cd demos/01-sample-ucp_ap2/f-issue-user-credential
+npm install
+```
+
+### 起動
+
+```bash
+npm start
+# → http://localhost:4000
+```
+
+### 使い方
+
+1. Android デバイスに CMWallet（agentic-dpc ブランチ）をインストール
+2. デバイスの Chrome でサイトを開く（エミュレータ: `http://10.0.2.2:4000`）
+3. 「クレデンシャルを発行」ボタンを押し、ウォレット選択で CMWallet を選択
+
+DC API 非対応ブラウザ（デスクトップ Chrome など）ではシミュレーションモードで SD-JWT の内容を確認できます。
+
+---
+
 ## ポート一覧
 
 | サービス | URL | 備考 |
@@ -239,6 +269,7 @@ Publishable API Key の取得: `http://localhost:9000/app` → Settings → Publ
 | AI エージェントアプリ | `http://localhost:3100` | `c-ai-agent-app` |
 | Payment Handler / Credential Provider | `http://localhost:3200` | `d-payment_handler-credential_provider` |
 | Trusted Surface (Wallet) | `http://localhost:3300` | `e-trusted_surface-wallet` |
+| DPC 発行サイト | `http://localhost:4000` | `f-issue-user-credential` |
 
 ---
 
@@ -275,6 +306,42 @@ Publishable API Key の取得: `http://localhost:9000/app` → Settings → Publ
 |---|---|---|
 | `TRUSTED_SURFACE_PORT` | 任意 | デフォルト: `3300` |
 | `TRUSTED_SURFACE_API_KEY` | 任意 | 認証キー（未設定時は認証なし） |
+
+---
+
+## Android デバイスでのテスト（ngrok）
+
+DC API（Digital Credentials API）を Android デバイスで動かすには HTTPS が必要です。  
+ngrok でローカルサーバーを HTTPS 公開することで、エミュレータ・物理デバイスの両方からテストできます。
+
+| コンポーネント | DC API の用途 | 対象ポート |
+|---|---|---|
+| `c-ai-agent-app` | AP2 HNP 委任フロー（`credentials.get`） | `:3100` |
+| `f-issue-user-credential` | DPC クレデンシャル発行（`credentials.create`） | `:4000` |
+
+### ngrok のインストール（未インストールの場合）
+
+```bash
+brew install ngrok
+```
+
+### 使い方
+
+各コンポーネントに `start:ngrok` スクリプトが用意されており、サーバーと ngrok を1コマンドで同時起動できます。
+
+```bash
+# f-issue-user-credential（ポート 4000）
+cd demos/01-sample-ucp_ap2/f-issue-user-credential
+npm run start:ngrok
+
+# c-ai-agent-app（ポート 3100）
+cd demos/01-sample-ucp_ap2/c-ai-agent-app
+npm run start:ngrok
+```
+
+起動後、ターミナルに表示された `https://xxxx-…ngrok-free.app` を Android デバイスの Chrome で開きます。
+
+> **なぜ ngrok が必要か**: `navigator.credentials.get/create()` はセキュアコンテキスト（HTTPS）のみで動作します。Android エミュレータから `http://10.0.2.2:xxxx` でアクセスしても HTTP 扱いとなり DC API がブロックされます。
 
 ---
 
