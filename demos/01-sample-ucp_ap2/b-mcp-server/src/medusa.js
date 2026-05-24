@@ -127,6 +127,8 @@ function cartToUcp(cart) {
     id: item.id,
     item: { id: item.variant_id },
     quantity: item.quantity,
+    title: item.title ?? null,
+    unit_price: item.unit_price ?? null,
   }));
   const subtotal = cart.subtotal ?? 0;
   const total    = cart.total    ?? subtotal;

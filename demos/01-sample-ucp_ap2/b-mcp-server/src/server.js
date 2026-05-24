@@ -415,7 +415,8 @@ mcp.registerTool(
       ...UCP_CART_CAP,
       id,
       status: "active",
-      line_items: lineItems,
+      // Medusa から返った line_items には title/unit_price が含まれるため優先する
+      line_items: medusaResult?.ucpCart.line_items ?? lineItems,
       currency: medusaResult?.ucpCart.currency ?? "USD",
       totals: medusaResult?.ucpCart.totals ?? computeTotals(lineItems),
       continue_url: medusaResult?.ucpCart.continue_url ?? `https://demo.example.com/checkout?cart=${id}`,
@@ -523,8 +524,9 @@ mcp.registerTool(
     // UCP cart_id（"cart_xxx"）を Medusa cart_id に解決する。
     // carts Map には { _medusa_id: "medusa_cart_yyy" } が格納されている。
     let resolvedCheckout = checkout;
+    let ucpCart = null;
     if (checkout.cart_id) {
-      const ucpCart = carts.get(checkout.cart_id);
+      ucpCart = carts.get(checkout.cart_id) ?? null;
       if (ucpCart?._medusa_id) {
         resolvedCheckout = { ...checkout, cart_id: ucpCart._medusa_id };
       } else if (ucpCart && !ucpCart._medusa_id) {
@@ -546,6 +548,10 @@ mcp.registerTool(
 
     const rec = recordForResponse(id, meta, checkout, "incomplete");
     if (medusaCartId) rec._medusa_cart_id = medusaCartId;
+    // カートの line_items をレスポンスに含める（AI は cart_id のみを渡すため checkout.line_items は空になるため）
+    if (ucpCart?.line_items?.length) {
+      rec.checkout = { ...rec.checkout, line_items: ucpCart.line_items };
+    }
 
     if (PAYMENT_HANDLER_URL) {
       rec.checkout = {
@@ -570,11 +576,18 @@ mcp.registerTool(
         name:    process.env.MERCHANT_NAME    ?? "Demo Merchant",
         website: process.env.EC_BACKEND_URL   ?? "http://localhost:9000",
       },
-      line_items: (checkout.line_items ?? []).map((li, idx) => ({
-        id:       li.id ?? `line_${idx + 1}`,
-        variant:  { id: li.item?.id ?? li.variant_id ?? "unknown" },
-        quantity: li.quantity ?? 1,
-      })),
+      line_items: (rec.checkout.line_items ?? []).map((li, idx) => {
+        const qty       = li.quantity ?? 1;
+        const unitPrice = li.unit_price ?? null;
+        return {
+          id:         li.id ?? `line_${idx + 1}`,
+          title:      li.title ?? null,
+          variant:    { id: li.item?.id ?? li.variant_id ?? "unknown" },
+          quantity:   qty,
+          unit_price: unitPrice,
+          price:      unitPrice != null ? unitPrice * qty : null,
+        };
+      }),
       currency: "JPY",
       iat:      Math.floor(Date.now() / 1000),
     };
