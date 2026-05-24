@@ -281,6 +281,123 @@ async function handleCredentialVerify(body) {
   };
 }
 
+/**
+ * dSD-JWT チェーンからマンデートディスクロージャを抽出する（CP 内コピー）。
+ * チェーン形式: dpc_jwt ~ dpc_discs ~~ KB-SD-JWT ~ mandate_disc_1 ~ mandate_disc_2 ~
+ */
+function parseDsdJwtChain(chain) {
+  if (!chain || typeof chain !== "string") return { mandates: [] };
+  const separatorIdx = chain.indexOf("~~");
+  if (separatorIdx === -1) return { mandates: [] };
+  const kbParts = chain.slice(separatorIdx + 2).split("~").filter(Boolean);
+  const mandates = kbParts.slice(1).map(disc => {
+    try {
+      const arr = JSON.parse(Buffer.from(disc, "base64url").toString("utf8"));
+      return Array.isArray(arr) && arr.length >= 2 ? arr[1] : null;
+    } catch { return null; }
+  }).filter(Boolean);
+  return { mandates };
+}
+
+/**
+ * POST /hp-credential
+ *
+ * AP2 HP（Human Present）フロー用クレデンシャル発行。
+ * 2 種類の入力形式をサポート：
+ *   (A) DC API フロー: dsd_jwt_chain（CMWallet が署名した dSD-JWT チェーン）
+ *       または mandate_payloads（チェーンから抽出済みの mandate JSON 配列）
+ *   (B) Mock TS フロー: l2_mandate（単一の KB-SD-JWT、TS サーバーが署名）
+ *
+ * 出力:
+ *   token          クレデンシャルトークン（ucp_tok_*）
+ *   expiry         有効期限（ISO 8601）
+ *   transaction_id 取引識別子
+ */
+async function handleHpCredential(body) {
+  const { l2_mandate, dsd_jwt_chain, mandate_payloads, checkout_hash } = body;
+
+  let delegatePayload;
+
+  if (Array.isArray(mandate_payloads) && mandate_payloads.length > 0) {
+    // (A) DC API フロー: エージェントサーバーがチェーンから抽出済み
+    delegatePayload = mandate_payloads;
+  } else if (dsd_jwt_chain) {
+    // (A) DC API フロー: チェーンを直接受け取った場合
+    delegatePayload = parseDsdJwtChain(dsd_jwt_chain).mandates;
+  } else if (l2_mandate) {
+    // (B) Mock TS フロー: L2 Mandate JWT を検証・デコード
+    let l2Payload;
+    if (TRUSTED_SURFACE_URL) {
+      const keys = await fetchTrustedSurfaceJwks();
+      let verified = false;
+      for (const jwk of keys) {
+        try {
+          l2Payload = await verifyJwt(l2_mandate, jwk);
+          verified  = true;
+          break;
+        } catch {}
+      }
+      if (!verified) {
+        return { status: 403, body: { error: "l2_mandate_signature_invalid" } };
+      }
+    } else {
+      try   { l2Payload = decodeJwtPayload(l2_mandate); }
+      catch { return { status: 400, body: { error: "invalid_l2_mandate" } }; }
+    }
+    delegatePayload = l2Payload?.delegate_payload ?? [];
+  } else {
+    return { status: 400, body: { error: "l2_mandate, dsd_jwt_chain, または mandate_payloads は必須です" } };
+  }
+
+  if (delegatePayload.length === 0) {
+    return { status: 400, body: { error: "delegate_payload が空です" } };
+  }
+
+  // 2. delegate_payload から Payment Mandate を取得
+  // DC API フロー: vct = "mandate.payment" / Mock TS フロー: vct = "mandate.payment.1"
+  const paymentMandate  = delegatePayload.find((m) => m.vct === "mandate.payment.1" || m.vct === "mandate.payment");
+  const checkoutMandate = delegatePayload.find((m) => m.vct === "mandate.checkout.1" || m.vct === "mandate.checkout");
+
+  if (!paymentMandate) {
+    return { status: 400, body: { error: "payment_mandate_not_found_in_delegate_payload" } };
+  }
+
+  // 3. checkout_hash 照合（オプション）
+  const mandateCheckoutHash = checkoutMandate?.checkout_hash ?? paymentMandate?.transaction_id;
+  if (checkout_hash && mandateCheckoutHash && checkout_hash !== mandateCheckoutHash) {
+    return { status: 403, body: { error: "checkout_hash_mismatch" } };
+  }
+
+  // 4. Credential token を発行
+  const token      = `ucp_tok_${randomBytes(16).toString("hex")}`;
+  const expiresAt  = Date.now() + TOKEN_TTL_MS;
+  const transId    = paymentMandate.transaction_id ?? randomBytes(16).toString("hex");
+  const instrument = paymentMandate.payment_instrument ?? null;
+
+  tokenStore.set(token, {
+    type:              "credential",
+    transactionId:     transId,
+    payee:             paymentMandate.payee,
+    paymentAmount:     paymentMandate.payment_amount,
+    paymentInstrument: instrument,
+    checkoutHash:      checkout_hash ?? mandateCheckoutHash,
+    expiresAt,
+    isMock:            !TRUSTED_SURFACE_URL,
+  });
+
+  console.log(`[hp-credential] HP token issued tx=${transId} mock=${!TRUSTED_SURFACE_URL}`);
+
+  return {
+    status: 200,
+    body: {
+      token,
+      expiry:         new Date(expiresAt).toISOString(),
+      transaction_id: transId,
+      ...(TRUSTED_SURFACE_URL ? {} : { _mock: true }),
+    },
+  };
+}
+
 // ─── Stripe（オプション） ────────────────────────────────────────────────────────
 
 let stripe = null;
@@ -548,6 +665,17 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "POST" && pathname === "/hp-credential") {
+    try {
+      const body = await parseBody(req);
+      const result = await handleHpCredential(body);
+      return send(res, result.status, result.body);
+    } catch (e) {
+      console.error("[hp-credential] error:", e.message);
+      return send(res, 500, { error: "internal_error", detail: e.message });
+    }
+  }
+
   if (req.method === "POST" && pathname === "/credential/verify") {
     try {
       const body = await parseBody(req);
@@ -566,5 +694,5 @@ server.listen(PORT, () => {
   console.log(`  Stripe:          ${stripe ? "configured (live mode)" : "NOT configured — mock mode"}`);
   console.log(`  Trusted Surface: ${TRUSTED_SURFACE_URL ?? "NOT configured — mandate verification skipped (mock)"}`);
   console.log(`  Endpoints (Payment Handler):    POST /tokenize  POST /detokenize  GET /health`);
-  console.log(`  Endpoints (Credential Provider): POST /credential  POST /credential/verify`);
+  console.log(`  Endpoints (Credential Provider): POST /credential  POST /hp-credential  POST /credential/verify`);
 });

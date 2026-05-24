@@ -667,6 +667,21 @@
       margin-top: 0.2rem;
     }
 
+    .copy-btn {
+      display: inline-block;
+      margin-top: 0.25rem;
+      padding: 0.12rem 0.4rem;
+      font-size: 0.6rem;
+      background: rgba(79,126,248,0.1);
+      border: 1px solid rgba(79,126,248,0.25);
+      border-radius: 3px;
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .copy-btn:hover { background: rgba(79,126,248,0.22); }
+
     /* ── Chat toolbar ── */
     .chat-toolbar {
       display: flex;
@@ -839,6 +854,7 @@
     <div class="sub-tabs">
       <button class="sub-tab-btn active" data-subtab="ucp">UCP フロー</button>
       <button class="sub-tab-btn"        data-subtab="ap2">AP2 HNP フロー</button>
+      <button class="sub-tab-btn"        data-subtab="ap2hp">AP2 HP フロー</button>
     </div>
 
     <!-- UCP フロー サブタブ -->
@@ -849,6 +865,53 @@
         </button>
       </div>
       <div id="chat-area"></div>
+    </div>
+
+    <!-- AP2 HP フロー サブタブ -->
+    <div id="sub-pane-ap2hp" class="sub-tab-pane">
+      <!-- AP2 HP チャット -->
+      <div class="chat-toolbar" style="margin-top:0.25rem">
+        <button class="settings-btn" id="ap2hp-settings-open-btn">
+          ⚙️ 購入者情報設定<span class="profile-set-badge" id="ap2hp-settings-profile-badge" style="display:none">✓</span>
+        </button>
+      </div>
+      <div id="ap2hp-chat-area"></div>
+
+      <!-- AP2 HP 詳細設定（折りたたみ） -->
+      <details id="ap2hp-config-details" style="margin-top:1rem">
+        <summary style="cursor:pointer;font-size:0.82rem;color:var(--muted);padding:0.3rem 0">
+          ⚙️ 詳細設定（支払い手段・マーチャント情報）
+        </summary>
+        <div class="ap2-panel" style="margin-top:0.5rem">
+          <div class="ap2-intent-form" id="ap2hp-config-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ap2hp-instrument">支払い手段</label>
+                <select id="ap2hp-instrument">
+                  <option value="card_visa_4242">Visa ···· 4242</option>
+                  <option value="card_mc_5555">Mastercard ···· 5555</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="ap2hp-max-amount">最大金額（JPY）</label>
+                <input id="ap2hp-max-amount" type="number" value="50000" style="background:var(--bg)" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ap2hp-merchant-id">マーチャント ID</label>
+                <input id="ap2hp-merchant-id" type="text" value="merchant_1" style="background:var(--bg)" />
+              </div>
+              <div class="form-group">
+                <label for="ap2hp-merchant-name">マーチャント名</label>
+                <input id="ap2hp-merchant-name" type="text" value="Demo Merchant" style="background:var(--bg)" />
+              </div>
+            </div>
+            <button class="ap2-init-btn" id="ap2hp-config-btn">⚙️ 設定を反映してチャットをリセット</button>
+          </div>
+          <div id="ap2hp-config-result" class="ap2-init-result"></div>
+        </div>
+      </details>
     </div>
 
     <!-- AP2 HNP フロー サブタブ -->
@@ -1079,15 +1142,19 @@
 
 <script>
 /* ── State ──────────────────────────────────────────────────────────────────── */
-let chatHistory    = [];
-let ap2ChatHistory = [];
+let chatHistory      = [];
+let ap2ChatHistory   = [];
+let ap2HpChatHistory = [];
 let hasApiKey         = false;
 let hasPaymentHandler = false;
 let hasTrustedSurface = false;
 let ap2SessionActive  = false;
+let ap2HpAvailable    = false;
+let ap2HpConfigured   = true;   // デフォルト値で即時起動（詳細設定は折りたたみ）
 let lastCheckoutId    = null;
 let shippingInfoSent  = false;
-let ap2ShippingInfoSent = false;
+let ap2ShippingInfoSent   = false;
+let ap2HpShippingInfoSent = false;
 let ap2OpenPaymentMandate  = null;
 let ap2OpenCheckoutMandate = null;
 
@@ -1126,6 +1193,11 @@ function updateSettingsBtnBadge() {
       document.querySelectorAll(".sub-tab-pane").forEach(p => p.classList.remove("active"));
       btn.classList.add("active");
       document.getElementById("sub-pane-" + btn.dataset.subtab).classList.add("active");
+      // AP2 HP タブを開いたらチャットエリアを初期化（未初期化の場合のみ）
+      if (btn.dataset.subtab === "ap2hp") {
+        const area = document.getElementById("ap2hp-chat-area");
+        if (area && !area.querySelector(".chat-messages")) renderAp2HpChatArea();
+      }
     });
   });
 
@@ -1187,11 +1259,17 @@ function updateSettingsBtnBadge() {
     if (e.target === this) closeSettingsModal();
   });
 
-  // Settings modal events (AP2)
+  // Settings modal events (AP2 HNP)
   document.getElementById("ap2-settings-open-btn").addEventListener("click", openSettingsModal);
 
-  // AP2 init
+  // Settings modal events (AP2 HP)
+  document.getElementById("ap2hp-settings-open-btn").addEventListener("click", openSettingsModal);
+
+  // AP2 HNP init
   document.getElementById("ap2-init-btn").addEventListener("click", initAp2Session);
+
+  // AP2 HP config
+  document.getElementById("ap2hp-config-btn").addEventListener("click", initAp2HpSession);
 
   // Shipping modal events
   document.getElementById("shipping-close-btn").addEventListener("click", closeShippingModal);
@@ -1210,6 +1288,7 @@ function updateSettingsBtnBadge() {
     hasPaymentHandler = status.paymentHandler;
     hasTrustedSurface = status.trustedSurface;
     ap2SessionActive  = status.ap2SessionActive;
+    ap2HpAvailable    = status.ap2HpAvailable ?? false;
   } catch {}
 
   const badge = document.getElementById("api-badge");
@@ -1231,6 +1310,7 @@ function updateSettingsBtnBadge() {
 
   renderChatArea();
   renderAp2ChatArea();
+  renderAp2HpChatArea();
   updateAp2SessionBadge();
 })();
 
@@ -1688,11 +1768,13 @@ function updateAp2SessionBadge() {
     badge.textContent = "未委任";
     badge.className = "ap2-session-badge inactive";
   }
-  // AP2 settings badge
+  // AP2 settings badges
   const p = loadBuyerProfile();
   const hasData = !!(p.first_name || p.email || p.address1);
-  const ap2Badge = document.getElementById("ap2-settings-profile-badge");
-  if (ap2Badge) ap2Badge.style.display = hasData ? "inline" : "none";
+  const ap2Badge   = document.getElementById("ap2-settings-profile-badge");
+  const ap2hpBadge = document.getElementById("ap2hp-settings-profile-badge");
+  if (ap2Badge)   ap2Badge.style.display   = hasData ? "inline" : "none";
+  if (ap2hpBadge) ap2hpBadge.style.display = hasData ? "inline" : "none";
 }
 
 /* ── DC API ウォレット連携 ──────────────────────────────────────────────────── */
@@ -2058,6 +2140,347 @@ function sendAp2ShippingInfo() {
   }
 }
 
+/* ── AP2 HP ──────────────────────────────────────────────────────────────────── */
+
+async function initAp2HpSession() {
+  const btn      = document.getElementById("ap2hp-config-btn");
+  const resultEl = document.getElementById("ap2hp-config-result");
+
+  const instrumentId = document.getElementById("ap2hp-instrument").value;
+  const maxAmount    = parseInt(document.getElementById("ap2hp-max-amount").value || "50000", 10);
+  const merchantId   = document.getElementById("ap2hp-merchant-id").value.trim()   || "merchant_1";
+  const merchantName = document.getElementById("ap2hp-merchant-name").value.trim() || "Demo Merchant";
+
+  btn.disabled    = true;
+  btn.textContent = "⏳ 設定中...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/ap2-hp/init", {
+      method:  "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instrument_id: instrumentId, merchant_id: merchantId, merchant_name: merchantName, max_amount: maxAmount }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      resultEl.className = "ap2-init-result err";
+      resultEl.textContent = `エラー: ${esc(data.error ?? "不明なエラー")}`;
+      resultEl.style.display = "block";
+    } else {
+      ap2HpChatHistory      = [];
+      ap2HpShippingInfoSent = false;
+      resultEl.className = "ap2-init-result ok";
+      resultEl.textContent = `✅ 設定を反映しました（${esc(merchantName)} / ${instrumentId} / ¥${maxAmount.toLocaleString()}）`;
+      resultEl.style.display = "block";
+      renderAp2HpChatArea();
+      // 設定パネルを閉じる
+      const details = document.getElementById("ap2hp-config-details");
+      if (details) details.open = false;
+    }
+  } catch (err) {
+    resultEl.className = "ap2-init-result err";
+    resultEl.textContent = `通信エラー: ${esc(err.message)}`;
+    resultEl.style.display = "block";
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "⚙️ 設定を反映してチャットをリセット";
+  }
+}
+
+function renderAp2HpChatArea() {
+  const area = document.getElementById("ap2hp-chat-area");
+  if (!area) return;
+
+  if (!hasApiKey) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ GOOGLE_AI_STUDIO_API_KEY が設定されていません</h3>
+        <p>AP2 HP チャットを使うには <code>GOOGLE_AI_STUDIO_API_KEY</code> を設定してください。</p>
+      </div>`;
+    return;
+  }
+
+  if (!ap2HpAvailable) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ TRUSTED_SURFACE_URL または PAYMENT_HANDLER_URL が設定されていません</h3>
+        <p>AP2 HP フローには両方の設定が必要です。<code>c-ai-agent-app/.env</code> を確認してください。</p>
+      </div>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="chat-wrap">
+      <div class="chat-messages" id="ap2hp-chat-msgs">
+        <div class="msg sys"><div class="bubble">
+          AP2 HP モードで起動しました。<br>
+          購入したい商品をお伝えください。チェックアウト時に Trusted Surface が自動で決済認可を行います。
+        </div></div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="ap2hp-chat-in" rows="1" placeholder="例：ランニングシューズを買って&#10;Shift+Enter で改行、Enter で送信"></textarea>
+        <button class="send-btn" id="ap2hp-send-btn">送信</button>
+      </div>
+    </div>
+    <div class="chat-hint">
+      試してみる：
+      <span class="chip" onclick="fillAp2HpChat(this)">ランニングシューズを 1 足購入して</span>
+      <span class="chip" onclick="fillAp2HpChat(this)">Blue Running Shoes を探してチェックアウトまで完了して</span>
+    </div>`;
+
+  const input = document.getElementById("ap2hp-chat-in");
+  document.getElementById("ap2hp-send-btn").addEventListener("click", sendAp2HpChat);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAp2HpChat(); }
+  });
+  input.addEventListener("input", () => autoResizeTextarea(input));
+}
+
+function fillAp2HpChat(chip) {
+  const input = document.getElementById("ap2hp-chat-in");
+  if (input) { input.value = chip.textContent.trim(); autoResizeTextarea(input); input.focus(); }
+}
+
+async function sendAp2HpChat() {
+  const input   = document.getElementById("ap2hp-chat-in");
+  const sendBtn = document.getElementById("ap2hp-send-btn");
+  const msgs    = document.getElementById("ap2hp-chat-msgs");
+  const message = input?.value.trim();
+  if (!message || !msgs) return;
+
+  appendMsg(msgs, "user", esc(message).replace(/\n/g, "<br>"));
+  input.value = "";
+  autoResizeTextarea(input);
+  input.disabled   = true;
+  sendBtn.disabled = true;
+
+  const loadingId = "ap2hpld-" + Date.now();
+  appendMsg(msgs, "bot", "⏳ 考え中...", loadingId);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const res = await fetch("/api/chat-ap2-hp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, history: ap2HpChatHistory, buyerProfile: loadBuyerProfile() }),
+    });
+    const result = await res.json();
+    document.getElementById(loadingId)?.remove();
+
+    if (!result.ok) {
+      appendMsg(msgs, "sys", "エラー: " + esc(result.error));
+    } else {
+      ap2HpChatHistory = result.history;
+
+      const dcParamsLog = result.toolCallLog?.find(t => t.tool === "AP2 HP DC API パラメータ生成");
+      const regularLog  = result.toolCallLog?.filter(t => t.tool !== "AP2 HP DC API パラメータ生成") ?? [];
+      let logHtml = buildToolLog(regularLog);
+
+      const completeCall = result.toolCallLog?.find(t => t.tool === "complete_checkout" && !t.isError);
+      if (completeCall && dcParamsLog?.output?.checkout_jwt) {
+        logHtml += buildMandateBlock("決済完了 Mandate 詳細（HP DC API）", [
+          ["Checkout JWT", dcParamsLog.output.checkout_jwt],
+        ]);
+      }
+
+      let mainHtml = esc(result.text).replace(/\n/g, "<br>") + logHtml;
+
+      // DC API 承認ボタンを追加（create_checkout が _ap2_dc_params を返した場合）
+      if (result._ap2_dc_params) {
+        const dcParams = result._ap2_dc_params;
+        const btnId = "hp-dc-btn-" + Date.now();
+        mainHtml += `
+          <div class="dc-api-step" style="margin-top:0.8rem">
+            <div class="dc-api-step-title">🪪 Digital Credentials API 承認待ち</div>
+            <p style="font-size:0.85rem;margin:0.4rem 0">スマートフォン（Android / CMWallet）で支払い内容を確認・承認してください。</p>
+            <button class="send-btn" id="${btnId}" style="margin-top:0.4rem">
+              📱 DC API で承認する
+            </button>
+            <div id="${btnId}-status" style="margin-top:0.4rem;font-size:0.82rem"></div>
+            ${buildDcApiRequestBlock(dcParams)}
+          </div>`;
+        // ボタンのクリックハンドラは appendMsg 後に設定する
+        setTimeout(() => {
+          const btn = document.getElementById(btnId);
+          if (btn) btn.addEventListener("click", () => handleHpDcApi(dcParams, btnId, msgs));
+        }, 0);
+      }
+
+      appendMsg(msgs, "bot", mainHtml);
+
+      if (!ap2HpShippingInfoSent && result.text) {
+        const shippingKws = ["住所", "配送先", "お名前", "氏名", "メールアドレス", "連絡先"];
+        const questionKws = ["教えて", "ください", "入力", "必要", "？", "?"];
+        const hasShipping = shippingKws.some(k => result.text.includes(k));
+        const hasQuestion = questionKws.some(k => result.text.includes(k));
+        if (hasShipping && hasQuestion) openAp2HpShippingModal();
+      }
+    }
+  } catch (err) {
+    document.getElementById(loadingId)?.remove();
+    appendMsg(msgs, "sys", "通信エラー: " + esc(err.message));
+  } finally {
+    if (input)   { input.disabled   = false; input.focus(); }
+    if (sendBtn) sendBtn.disabled = false;
+    if (msgs)    msgs.scrollTop   = msgs.scrollHeight;
+  }
+}
+
+function openAp2HpShippingModal() {
+  openShippingModal();
+  const sendBtn = document.getElementById("shipping-send-btn");
+  const newBtn  = sendBtn.cloneNode(true);
+  sendBtn.parentNode.replaceChild(newBtn, sendBtn);
+  newBtn.addEventListener("click", () => {
+    sendAp2HpShippingInfo();
+  });
+}
+
+/**
+ * AP2 HP フロー: DC API を発火してウォレットから VP Token を取得し、
+ * /api/ap2-hp/dc-response に送信して payment token を発行する。
+ * 成功したらチャット履歴の create_checkout レスポンスに ap2_credential を注入し、
+ * 「承認が完了しました」メッセージで AI に続行させる。
+ */
+async function handleHpDcApi(dcParams, btnId, msgs) {
+  const btn       = document.getElementById(btnId);
+  const statusEl  = document.getElementById(btnId + "-status");
+  if (!btn || !dcParams) return;
+
+  btn.disabled   = true;
+  btn.textContent = "⏳ ウォレット連携中...";
+  if (statusEl) statusEl.textContent = "";
+
+  // ── Step 1: DC API でウォレットから VP Token を取得 ──────────────────────────
+  let vpToken = null;
+  try {
+    if (!navigator.credentials || typeof navigator.credentials.get !== "function") {
+      throw new Error("Digital Credentials API が利用できません（Android Chrome が必要です）");
+    }
+    const credential = await navigator.credentials.get({
+      digital: {
+        requests: [{
+          protocol: "openid4vp-v1-unsigned",
+          data: {
+            nonce:            dcParams.nonce,
+            response_mode:    dcParams.response_mode,
+            dcql_query:       dcParams.dcql_query,
+            transaction_data: dcParams.transaction_data,
+          },
+        }],
+      },
+    });
+    if (!credential?.data) throw new Error("クレデンシャルが返されませんでした");
+    const data = typeof credential.data === "string" ? JSON.parse(credential.data) : credential.data;
+    vpToken = data.vp_token ?? null;
+    if (!vpToken) throw new Error("vp_token が返されませんでした");
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "📱 DC API で承認する"; }
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ DC API エラー: ${esc(e.message)}</span>`;
+    return;
+  }
+
+  if (btn) btn.textContent = "⏳ クレデンシャル発行中...";
+
+  // ── Step 2: VP Token をサーバーに送り payment token を発行 ──────────────────
+  let credResult;
+  try {
+    const res = await fetch("/api/ap2-hp/dc-response", {
+      method:  "POST",
+      headers: { "content-type": "application/json" },
+      body:    JSON.stringify({ vp_token: vpToken, nonce: dcParams.nonce }),
+    });
+    credResult = await res.json();
+    if (!credResult.ok) throw new Error(credResult.error ?? "credential 発行失敗");
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "📱 DC API で承認する"; }
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ Credential 発行エラー: ${esc(e.message)}</span>`;
+    return;
+  }
+
+  // ── Step 3: チャット履歴の update_checkout レスポンスに ap2_credential を注入 ─
+  // （DC API は update_checkout 後に発火するため、update_checkout のレスポンスに注入する）
+  const { token, ap2_checkout_mandate, checkout_id } = credResult;
+  let injected = false;
+  for (let i = ap2HpChatHistory.length - 1; i >= 0; i--) {
+    const turn = ap2HpChatHistory[i];
+    // Gemini SDK stores functionResponse turns with role:"function" (not "user")
+    if ((turn.role === "user" || turn.role === "function") && Array.isArray(turn.parts)) {
+      for (const part of turn.parts) {
+        if (part.functionResponse?.name === "update_checkout") {
+          part.functionResponse.response = {
+            ...part.functionResponse.response,
+            ap2_credential:      { token, expiry: credResult.expiry, transaction_id: credResult.transaction_id },
+            ap2_checkout_mandate: ap2_checkout_mandate ?? null,
+          };
+          injected = true;
+          break;
+        }
+      }
+      if (injected) break;
+    }
+  }
+
+  if (!injected) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ チャット履歴への注入に失敗しました</span>`;
+    return;
+  }
+
+  if (btn) btn.textContent = "✅ 承認完了";
+  if (statusEl) {
+    statusEl.innerHTML = `<span style="color:var(--green)">✅ token: ${esc(token.slice(0,24))}...</span>
+      ${buildDcApiResponseBlock(vpToken)}`;
+  }
+
+  // ── Step 4: AI に続行を促す ──────────────────────────────────────────────────
+  const input = document.getElementById("ap2hp-chat-in");
+  if (input) {
+    input.value = "支払い承認が完了しました。complete_checkout を実行してください。";
+    autoResizeTextarea(input);
+    input.focus();
+  }
+  if (msgs) msgs.scrollTop = msgs.scrollHeight;
+}
+
+function sendAp2HpShippingInfo() {
+  const vals = {
+    firstName: document.getElementById("sh-first-name").value.trim(),
+    lastName:  document.getElementById("sh-last-name").value.trim(),
+    email:     document.getElementById("sh-email").value.trim(),
+    phone:     document.getElementById("sh-phone").value.trim(),
+    address1:  document.getElementById("sh-address1").value.trim(),
+    address2:  document.getElementById("sh-address2").value.trim(),
+    city:      document.getElementById("sh-city").value.trim(),
+    province:  document.getElementById("sh-province").value.trim(),
+    postal:    document.getElementById("sh-postal").value.trim(),
+    country:   document.getElementById("sh-country").value.toUpperCase().trim(),
+  };
+  const parts = ["以下の配送先・連絡先情報を使用してください："];
+  if (vals.firstName || vals.lastName) parts.push(`氏名: ${[vals.firstName, vals.lastName].filter(Boolean).join(" ")}`);
+  if (vals.email)    parts.push(`メール: ${vals.email}`);
+  if (vals.phone)    parts.push(`電話番号: ${vals.phone}`);
+  if (vals.address1) parts.push(`住所1: ${vals.address1}`);
+  if (vals.address2) parts.push(`住所2: ${vals.address2}`);
+  if (vals.city)     parts.push(`市区町村: ${vals.city}`);
+  if (vals.province) parts.push(`都道府県: ${vals.province}`);
+  if (vals.postal)   parts.push(`郵便番号: ${vals.postal}`);
+  if (vals.country)  parts.push(`国コード: ${vals.country}`);
+
+  if (parts.length > 1) {
+    const input = document.getElementById("ap2hp-chat-in");
+    if (input) { input.value = parts.join("\n"); autoResizeTextarea(input); input.focus(); }
+  }
+  closeShippingModal();
+  ap2HpShippingInfoSent = true;
+  const newBtn = document.getElementById("shipping-send-btn");
+  if (newBtn) {
+    const orig = newBtn.cloneNode(true);
+    newBtn.parentNode.replaceChild(orig, newBtn);
+    orig.addEventListener("click", sendShippingInfo);
+  }
+}
+
 /* ── Mandate display helpers ──────────────────────────────────────────────────── */
 function decodeJwtPayload(token) {
   try {
@@ -2087,6 +2510,180 @@ function buildMandateBlock(title, sections) {
   const inner = sections.map(([t, jwt]) => buildMandateSection(t, jwt)).join("");
   if (!inner) return "";
   return `<details class="mandate-block"><summary>🔐 ${esc(title)}</summary>${inner}</details>`;
+}
+
+/* ── Copy helper ─────────────────────────────────────────────────────────────── */
+function copyText(text, btnEl) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (!btnEl) return;
+    const orig = btnEl.textContent;
+    btnEl.textContent = "✓ コピー済";
+    setTimeout(() => { btnEl.textContent = orig; }, 1500);
+  }).catch(() => {});
+}
+
+/* ── DC API request block ────────────────────────────────────────────────────── */
+function buildDcApiRequestBlock(dcParams) {
+  if (!dcParams) return "";
+  const requestData = {
+    nonce:            dcParams.nonce,
+    response_mode:    dcParams.response_mode,
+    dcql_query:       dcParams.dcql_query,
+    transaction_data: dcParams.transaction_data,
+  };
+  const requestJson = JSON.stringify(requestData, null, 2);
+
+  let decodedTdHtml = "";
+  try {
+    const td = dcParams.transaction_data?.[0];
+    if (td) {
+      const b64 = td.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((td.length + 3) % 4 || 4);
+      const decoded = JSON.stringify(JSON.parse(atob(b64)), null, 2);
+      const uid2 = "dca-td-" + Math.random().toString(36).slice(2, 8);
+      decodedTdHtml = `<div class="mandate-section">
+        <div class="mandate-section-title" style="display:flex;justify-content:space-between;align-items:center">
+          transaction_data[0] (decoded)
+          <button class="copy-btn" onclick="copyText(document.getElementById('${uid2}').textContent,this)">📋 コピー</button>
+        </div>
+        <div class="mandate-jwt" id="${uid2}">${esc(decoded)}</div>
+      </div>`;
+    }
+  } catch {}
+
+  const uid = "dca-req-" + Math.random().toString(36).slice(2, 8);
+  return `<details class="mandate-block" style="margin-top:0.5rem">
+    <summary>📤 DC API リクエスト JSON</summary>
+    <div class="mandate-section">
+      <div class="mandate-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        navigator.credentials.get() data
+        <button class="copy-btn" onclick="copyText(document.getElementById('${uid}').textContent,this)">📋 コピー</button>
+      </div>
+      <div class="mandate-jwt" id="${uid}">${esc(requestJson)}</div>
+    </div>
+    ${decodedTdHtml}
+  </details>`;
+}
+
+/* ── dSD-JWT chain decoder ───────────────────────────────────────────────────── */
+function b64urlDecode(str) {
+  try {
+    const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
+
+function decodeJwtFull(jwt) {
+  try {
+    const parts = (jwt ?? "").split(".");
+    if (parts.length < 2) return null;
+    const header  = b64urlDecode(parts[0]);
+    const payload = b64urlDecode(parts[1]);
+    return { header, payload };
+  } catch { return null; }
+}
+
+function decodeDsdJwtChain(chain) {
+  if (!chain || typeof chain !== "string") return null;
+  const sepIdx = chain.indexOf("~~");
+  if (sepIdx === -1) return null;
+
+  const sdJwtParts = chain.slice(0, sepIdx).split("~").filter(Boolean);
+  const kbParts    = chain.slice(sepIdx + 2).split("~").filter(Boolean);
+
+  const issuerJwt         = sdJwtParts[0] ?? null;
+  const dpcDisclosures    = sdJwtParts.slice(1).map(d => b64urlDecode(d)).filter(Boolean);
+  const kbSdJwt           = kbParts[0] ?? null;
+  const mandateDisclosures = kbParts.slice(1).map(d => {
+    const arr = b64urlDecode(d);
+    return Array.isArray(arr) && arr.length >= 2 ? arr[1] : null;
+  }).filter(Boolean);
+
+  return {
+    issuerJwt,
+    issuerJwtDecoded:  decodeJwtFull(issuerJwt),
+    dpcDisclosures,
+    kbSdJwt,
+    kbSdJwtDecoded:    decodeJwtFull(kbSdJwt),
+    mandateDisclosures,
+  };
+}
+
+/* ── DC API response block ───────────────────────────────────────────────────── */
+function buildDcApiResponseBlock(vpToken) {
+  if (!vpToken) return "";
+
+  function copySection(label, text) {
+    const uid = "dca-s-" + Math.random().toString(36).slice(2, 8);
+    return `<div class="mandate-section">
+      <div class="mandate-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        ${esc(label)}
+        <button class="copy-btn" onclick="copyText(document.getElementById('${uid}').textContent,this)">📋 コピー</button>
+      </div>
+      <div class="mandate-jwt" id="${uid}">${esc(text)}</div>
+    </div>`;
+  }
+
+  const rawVp  = JSON.stringify(vpToken, null, 2);
+  const rawChain = vpToken?.dpc_credential;
+  const chain  = Array.isArray(rawChain) ? rawChain[0] : (typeof rawChain === "string" ? rawChain : null);
+  const dec    = chain ? decodeDsdJwtChain(chain) : null;
+
+  // ── Decoded sub-details ────────────────────────────────────────────────────
+  let decodedHtml = "";
+  if (dec) {
+    // Issuer JWT
+    let issuerSection = "";
+    if (dec.issuerJwtDecoded) {
+      issuerSection = copySection(
+        "DPC Issuer JWT — ヘッダー",
+        JSON.stringify(dec.issuerJwtDecoded.header, null, 2)
+      ) + copySection(
+        "DPC Issuer JWT — ペイロード",
+        JSON.stringify(dec.issuerJwtDecoded.payload, null, 2)
+      );
+    }
+
+    // DPC Disclosures
+    let dpcDiscHtml = dec.dpcDisclosures.map((d, i) =>
+      copySection(`DPC Disclosure [${i}]`, JSON.stringify(d, null, 2))
+    ).join("");
+
+    // KB-SD-JWT
+    let kbSection = "";
+    if (dec.kbSdJwtDecoded) {
+      kbSection = copySection(
+        "KB-SD-JWT — ヘッダー",
+        JSON.stringify(dec.kbSdJwtDecoded.header, null, 2)
+      ) + copySection(
+        "KB-SD-JWT — ペイロード",
+        JSON.stringify(dec.kbSdJwtDecoded.payload, null, 2)
+      );
+    }
+
+    // Mandate Disclosures
+    let mandateDiscHtml = dec.mandateDisclosures.map((m, i) =>
+      copySection(
+        `Mandate Disclosure [${i}]${m?.vct ? " — " + m.vct : ""}`,
+        JSON.stringify(m, null, 2)
+      )
+    ).join("");
+
+    decodedHtml = `<details class="mandate-block" style="margin-top:0.3rem;border-color:rgba(100,200,100,0.3)" open>
+      <summary style="background:rgba(100,200,100,0.07);color:#3a8a3a">🔍 dSD-JWT チェーン デコード済み</summary>
+      ${issuerSection}
+      ${dpcDiscHtml}
+      ${kbSection}
+      ${mandateDiscHtml}
+    </details>`;
+  }
+
+  return `<details class="mandate-block" style="margin-top:0.5rem" open>
+    <summary>📥 DC API レスポンス（CMWallet VP Token）</summary>
+    ${copySection("vp_token (JSON)", rawVp)}
+    ${chain ? copySection("dSD-JWT チェーン（dpc_credential 生データ）", chain) : ""}
+    ${decodedHtml}
+  </details>`;
 }
 
 /* ── Utils ───────────────────────────────────────────────────────────────────── */

@@ -32,6 +32,13 @@ const { subtle } = globalThis.crypto;
 let _ap2Session = null;
 // { agentKeyPair, agentPubJwk, openPaymentMandate, openCheckoutMandate, expiresAt, intent, vpToken }
 
+let _ap2HpSession = null;
+// { instrumentId, merchantId, merchantName, maxAmount }
+
+// HP DC API セッション管理（nonce → checkoutId/checkoutHash の保持）
+const _pendingHpDcSessions = new Map();
+// Map<nonce, { checkoutId, checkoutHash, createdAt }>
+
 // DC API セッション管理（nonce→agent keypair の保持）
 const _pendingDcSessions = new Map();
 // Map<nonce, { keyPair, agentPubJwk, createdAt }>
@@ -165,6 +172,30 @@ Rules:
 - If create_checkout returns payment_handlers, inform the user that credit card information is required. Ask them to use the payment form on the screen to issue a payment token, then include the token in complete_checkout as checkout.payment.instruments[0].credential.token.
 - When the user provides a payment token message containing "checkout_id:" and "token:", extract those values and call complete_checkout with id equal to the checkout_id value and checkout.payment.instruments[0].credential.token equal to the token value. Do not use any other checkout_id.`;
 
+const AP2_HP_SYSTEM_PROMPT = `You are a UCP shopping assistant operating in AP2 HP (Human Present) mode.
+The user is physically present. You help them find and purchase items.
+Payment credentials are issued via the Digital Credentials API (Android CMWallet) after the user approves payment on their device.
+
+Flow to follow:
+1. search_catalog — search for products matching the user's request
+2. get_product — get details and variant IDs for the chosen product
+3. create_cart — create a cart with the chosen item
+4. create_checkout — start a checkout session (no payment approval needed yet)
+5. update_checkout — add shipping info (email and shipping_address).
+   IMPORTANT: the response will contain "_ap2_dc_params". This means the UI will now trigger Digital Credentials API for the user to approve payment on their Android device.
+   Inform the user: "配送情報を設定しました。スマートフォンで支払いを承認してください。承認後、続行ボタンを押してください。"
+   Do NOT call complete_checkout yet. Wait for the user to confirm approval.
+6. Once the user confirms approval (ap2_credential and ap2_checkout_mandate will be injected into the update_checkout response):
+   - complete_checkout — finalize the purchase:
+     * Set checkout.payment.instruments = [{ type: "card", credential: { token: "<ap2_credential.token from update_checkout response>" } }]
+     * Set top-level ap2 = { checkout_mandate: "<ap2_checkout_mandate from update_checkout response>" }
+
+Rules:
+- Always include meta: { "ucp-agent": { "profile": "https://demo-agent.example/.well-known/ucp" } } in every tool call.
+- For complete_checkout and cancel_checkout, also add a random UUID as "idempotency-key" in meta.
+- Do NOT ask for credit card information.
+- Be concise. Respond in the same language the user writes in (Japanese if Japanese input).`;
+
 const AP2_SYSTEM_PROMPT = `You are a UCP shopping assistant operating in AP2 HNP (Human Not Present) mode.
 The user has pre-authorized purchases via the AP2 Trusted Surface. You have authority to complete purchases autonomously within the authorized constraints.
 
@@ -212,7 +243,27 @@ function resetChatMcpClient() {
   _chatTools  = null;
 }
 
-// ── 永続 MCP クライアント（AP2 チャット用）──────────────────────────────────
+// ── 永続 MCP クライアント（AP2 HP チャット用）────────────────────────────────
+
+let _ap2HpChatClient = null;
+let _ap2HpChatTools  = null;
+
+async function getAp2HpChatMcpClient() {
+  if (!_ap2HpChatClient) {
+    _ap2HpChatClient = await createMcpClient();
+    const { tools } = await _ap2HpChatClient.listTools();
+    _ap2HpChatTools = tools;
+  }
+  return { client: _ap2HpChatClient, tools: _ap2HpChatTools };
+}
+
+function resetAp2HpChatClient() {
+  _ap2HpChatClient?.close().catch(() => {});
+  _ap2HpChatClient = null;
+  _ap2HpChatTools  = null;
+}
+
+// ── 永続 MCP クライアント（AP2 HNP チャット用）──────────────────────────────────
 
 let _ap2ChatClient = null;
 let _ap2ChatTools  = null;
@@ -230,6 +281,97 @@ function resetAp2ChatClient() {
   _ap2ChatClient?.close().catch(() => {});
   _ap2ChatClient = null;
   _ap2ChatTools  = null;
+}
+
+/**
+ * AP2 HP フロー: create_checkout 後に DC API で送る OID4VP リクエストパラメータを生成する。
+ * delegate 型 transaction_data に checkout_jwt / payment 情報を含め、
+ * CMWallet（Trusted Surface）がユーザー承認後に dSD-JWT チェーンとして L2 Immediate Mandate を返す。
+ * cnf なし → SdJwt.presentWithDelegations が typ:"kb-sd-jwt" (L2 Immediate) を生成する。
+ */
+function generateHpDcParams(checkoutData) {
+  const session      = _ap2HpSession ?? {};
+  const instrumentId = session.instrumentId ?? "card_visa_4242";
+  const instrument   = INSTRUMENT_MAP[instrumentId] ?? INSTRUMENT_MAP.card_visa_4242;
+  const payee = {
+    id:   session.merchantId   ?? "merchant_1",
+    name: session.merchantName ?? "Demo Merchant",
+  };
+  const rawAmount = checkoutData.total ?? checkoutData.subtotal ?? checkoutData.grand_total ?? null;
+  const amount    = rawAmount != null ? rawAmount : Math.min(session.maxAmount ?? 50000, 50000);
+
+  // WASM が認識する VCT 名を使用（"mandate.payment" / "mandate.checkout"）
+  // cnf を含めないことで L2 Immediate（typ:"kb-sd-jwt"）として署名される
+  const paymentMandatePayload = {
+    vct:               "mandate.payment",
+    payee,
+    payment_amount:    { amount, currency: "JPY" },
+    payment_instrument: instrument,
+  };
+  const checkoutMandatePayload = {
+    vct:          "mandate.checkout",
+    checkout_jwt:  checkoutData.checkout_jwt  ?? null,
+    checkout_hash: checkoutData.checkout_hash ?? null,
+  };
+
+  const delegateItem = {
+    type:                 "delegate",
+    format:               "dc+sd-jwt",
+    credential_ids:       ["dpc_credential"],
+    delegate_payload:     [paymentMandatePayload, checkoutMandatePayload],
+    delegate_disclosures: [],
+  };
+  const transactionDataEncoded = Buffer.from(JSON.stringify(delegateItem)).toString("base64url");
+
+  const nonce = randomUUID();
+  _pendingHpDcSessions.set(nonce, {
+    checkoutId:   checkoutData.id,
+    checkoutHash: checkoutData.checkout_hash,
+    createdAt:    Date.now(),
+  });
+  for (const [n, s] of _pendingHpDcSessions) {
+    if (Date.now() - s.createdAt > 3_600_000) _pendingHpDcSessions.delete(n);
+  }
+
+  return {
+    nonce,
+    dcql_query: {
+      credentials: [{
+        id:     "dpc_credential",
+        format: "dc+sd-jwt",
+        meta:   { vct_values: ["com.emvco.dpc"] },
+        claims: [
+          { path: ["card_last_four"] },
+          { path: ["card_network_code"] },
+          { path: ["credential_id"] },
+        ],
+      }],
+    },
+    response_mode:    "dc_api",
+    transaction_data: [transactionDataEncoded],
+  };
+}
+
+/**
+ * dSD-JWT チェーンからマンデートディスクロージャを抽出する。
+ * チェーン形式: dpc_jwt ~ dpc_discs ~~ KB-SD-JWT ~ mandate_disc_1 ~ mandate_disc_2 ~
+ * 各マンデートディスクロージャ: base64url(["<salt>", <mandate_json>])
+ */
+function parseDsdJwtChain(chain) {
+  if (!chain || typeof chain !== "string") return { mandates: [] };
+  const separatorIdx = chain.indexOf("~~");
+  if (separatorIdx === -1) return { mandates: [] };
+  const kbPart  = chain.slice(separatorIdx + 2);
+  const kbParts = kbPart.split("~").filter(Boolean);
+  // kbParts[0] = KB-SD-JWT, kbParts[1..] = mandate disclosures
+  const mandates = kbParts.slice(1).map(disc => {
+    try {
+      const decoded = Buffer.from(disc, "base64url").toString("utf8");
+      const arr     = JSON.parse(decoded);
+      return Array.isArray(arr) && arr.length >= 2 ? arr[1] : null;
+    } catch { return null; }
+  }).filter(Boolean);
+  return { mandates };
 }
 
 // ── GET /api/ap2/dc-request ──────────────────────────────────────────────────
@@ -324,10 +466,11 @@ app.get("/api/ap2/dc-request", async (req, res) => {
 
 app.get("/api/status", (_req, res) => {
   res.json({
-    gemini:          !!process.env.GOOGLE_AI_STUDIO_API_KEY,
-    paymentHandler:  !!PAYMENT_HANDLER_URL,
-    trustedSurface:  !!TRUSTED_SURFACE_URL,
+    gemini:           !!process.env.GOOGLE_AI_STUDIO_API_KEY,
+    paymentHandler:   !!PAYMENT_HANDLER_URL,
+    trustedSurface:   !!TRUSTED_SURFACE_URL,
     ap2SessionActive: !!_ap2Session,
+    ap2HpAvailable:   !!TRUSTED_SURFACE_URL && !!PAYMENT_HANDLER_URL,
   });
 });
 
@@ -418,6 +561,30 @@ app.post("/api/ap2/init", async (req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+// ── POST /api/ap2-hp/init ─────────────────────────────────────────────────────
+//
+// AP2 HP セッション設定（支払い手段・マーチャント情報の保存）。
+// HNP の /api/ap2/init と異なり Open Mandate 発行は行わない。
+
+app.post("/api/ap2-hp/init", (req, res) => {
+  const {
+    instrument_id  = "card_visa_4242",
+    merchant_id    = "merchant_1",
+    merchant_name  = "Demo Merchant",
+    max_amount     = 50000,
+  } = req.body ?? {};
+
+  _ap2HpSession = {
+    instrumentId:  instrument_id,
+    merchantId:    merchant_id,
+    merchantName:  merchant_name,
+    maxAmount:     parseInt(max_amount, 10),
+  };
+  resetAp2HpChatClient();
+  console.log(`[ap2-hp/init] session set instrument=${instrument_id} merchant=${merchant_name}`);
+  res.json({ ok: true, instrument_id, merchant_id, merchant_name, max_amount });
 });
 
 // ── POST /api/demo ───────────────────────────────────────────────────────────
@@ -604,6 +771,182 @@ app.post("/api/chat-ap2", async (req, res) => {
   } catch (err) {
     resetAp2ChatClient();
     res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── POST /api/chat-ap2-hp（AP2 HP フロー）────────────────────────────────────
+
+app.post("/api/chat-ap2-hp", async (req, res) => {
+  if (!process.env.GOOGLE_AI_STUDIO_API_KEY) {
+    return res.status(503).json({ ok: false, error: "GOOGLE_AI_STUDIO_API_KEY が設定されていません" });
+  }
+  if (!TRUSTED_SURFACE_URL) {
+    return res.status(503).json({ ok: false, error: "TRUSTED_SURFACE_URL が設定されていません。c-ai-agent-app/.env に TRUSTED_SURFACE_URL=http://localhost:3300 を追加してください。" });
+  }
+  if (!PAYMENT_HANDLER_URL) {
+    return res.status(503).json({ ok: false, error: "PAYMENT_HANDLER_URL が設定されていません。" });
+  }
+
+  const { message, history = [], buyerProfile = null } = req.body;
+  if (!message?.trim()) return res.status(400).json({ ok: false, error: "message is required" });
+
+  try {
+    const { client, tools: mcpTools } = await getAp2HpChatMcpClient();
+    const functionDeclarations = mcpTools.map((t) => ({
+      name: t.name, description: t.description ?? "", parameters: cleanSchema(t.inputSchema),
+    }));
+
+    let systemInstruction = AP2_HP_SYSTEM_PROMPT;
+    if (buyerProfile && (buyerProfile.first_name || buyerProfile.email || buyerProfile.address1)) {
+      const parts = ["Buyer profile (use automatically in update_checkout):"];
+      const name = [buyerProfile.first_name, buyerProfile.last_name].filter(Boolean).join(" ");
+      if (name)               parts.push(`Name: ${name}`);
+      if (buyerProfile.email) parts.push(`Email: ${buyerProfile.email}`);
+      if (buyerProfile.phone) parts.push(`Phone: ${buyerProfile.phone}`);
+      const addr = {};
+      if (buyerProfile.address1) addr.address_1   = buyerProfile.address1;
+      if (buyerProfile.address2) addr.address_2   = buyerProfile.address2;
+      if (buyerProfile.city)     addr.city         = buyerProfile.city;
+      if (buyerProfile.province) addr.province     = buyerProfile.province;
+      if (buyerProfile.postal)   addr.postal_code  = buyerProfile.postal;
+      if (buyerProfile.country)  addr.country_code = buyerProfile.country.toLowerCase();
+      if (Object.keys(addr).length) parts.push(`Shipping address: ${JSON.stringify(addr)}`);
+      systemInstruction += `\n\n${parts.join("\n")}`;
+    }
+
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_STUDIO_API_KEY);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3-flash-preview",
+      systemInstruction,
+      tools: [{ functionDeclarations }],
+    });
+
+    const chat = model.startChat({ history });
+    const toolCallLog = [];
+    let response = await chat.sendMessage(message);
+    let lastHpDcParams    = null;
+    let lastCheckoutData  = null;  // create_checkout の結果を保持（update_checkout 後に使用）
+
+    while (true) {
+      const parts = response.response.candidates?.[0]?.content?.parts ?? [];
+      const fnCalls = parts.filter((p) => p.functionCall);
+      if (fnCalls.length === 0) break;
+
+      const fnResponses = [];
+      for (const part of fnCalls) {
+        const { name, args } = part.functionCall;
+        const { isError, data } = await callTool(client, name, args);
+        toolCallLog.push({ tool: name, input: args, output: data, isError });
+
+        // create_checkout: checkout_jwt / checkout_hash を保持（後で DC API パラメータ生成に使用）
+        if (name === "create_checkout" && !isError && data.checkout_hash) {
+          lastCheckoutData = data;
+        }
+
+        // AP2 HP: update_checkout 成功後に DC API パラメータを生成してレスポンスに注入する。
+        // 配送情報が確定した段階でユーザーに支払い承認（Mandate 生成）を促す。
+        // 実際の credential 発行は /api/ap2-hp/dc-response でユーザー承認後に行う。
+        if (name === "update_checkout" && !isError && lastCheckoutData) {
+          const dcParams = generateHpDcParams(lastCheckoutData);
+          data._ap2_dc_params = dcParams;
+          lastHpDcParams = dcParams;
+          toolCallLog.push({
+            tool:    "AP2 HP DC API パラメータ生成",
+            input:   { checkout_id: lastCheckoutData.id, checkout_hash: lastCheckoutData.checkout_hash },
+            output:  {
+              nonce:        dcParams.nonce,
+              checkout_jwt: lastCheckoutData.checkout_jwt ?? null,
+            },
+            isError: false,
+          });
+        }
+
+        fnResponses.push({ functionResponse: { name, response: data } });
+      }
+      response = await chat.sendMessage(fnResponses);
+    }
+
+    res.json({
+      ok:             true,
+      text:           response.response.text(),
+      toolCallLog,
+      history:        await chat.getHistory(),
+      _ap2_dc_params: lastHpDcParams,
+    });
+  } catch (err) {
+    resetAp2HpChatClient();
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── POST /api/ap2-hp/dc-response ─────────────────────────────────────────────
+//
+// DC API で CMWallet から受け取った VP Token（dSD-JWT チェーン）を処理し、
+// CP から payment token を発行する。
+// フロントエンドはトークンを受け取り、チャット履歴の update_checkout レスポンスに
+// ap2_credential と ap2_checkout_mandate を注入してから AI に続行させる。
+
+app.post("/api/ap2-hp/dc-response", async (req, res) => {
+  const { vp_token, nonce } = req.body ?? {};
+
+  if (!vp_token || !nonce) {
+    return res.status(400).json({ ok: false, error: "vp_token と nonce は必須です" });
+  }
+  if (!PAYMENT_HANDLER_URL) {
+    return res.status(503).json({ ok: false, error: "PAYMENT_HANDLER_URL が設定されていません" });
+  }
+
+  const pendingSession = _pendingHpDcSessions.get(nonce);
+  if (!pendingSession) {
+    return res.status(404).json({ ok: false, error: "セッションが見つかりません（期限切れの可能性）" });
+  }
+
+  try {
+    // vp_token から dSD-JWT チェーンを取り出す
+    // CMWallet は IDENTIFIERS_1_0 プロトコルで { dpc_credential: ["<chain>"] } を返す（配列に包まれる）
+    const vpTokenObj = typeof vp_token === "string"
+      ? JSON.parse(vp_token)
+      : vp_token;
+    const rawChain = vpTokenObj?.dpc_credential;
+    const chain = Array.isArray(rawChain) ? rawChain[0]
+      : (typeof rawChain === "string" ? rawChain
+      : (typeof vp_token === "string" ? vp_token : JSON.stringify(vp_token)));
+
+    // チェーンからマンデートペイロードを抽出
+    const { mandates } = parseDsdJwtChain(chain);
+    console.log(`[ap2-hp/dc-response] Extracted ${mandates.length} mandates from dSD-JWT chain`);
+
+    // CP に送信
+    const credRes = await fetch(`${PAYMENT_HANDLER_URL}/hp-credential`, {
+      method:  "POST",
+      headers: { "content-type": "application/json" },
+      body:    JSON.stringify({
+        dsd_jwt_chain:    chain,
+        mandate_payloads: mandates,
+        checkout_hash:    pendingSession.checkoutHash,
+      }),
+    });
+    if (!credRes.ok) {
+      const text = await credRes.text().catch(() => "");
+      console.error(`[ap2-hp/dc-response] CP error ${credRes.status}: ${text}`);
+      return res.status(502).json({ ok: false, error: `CP error: ${credRes.status}` });
+    }
+    const credData = await credRes.json();
+
+    _pendingHpDcSessions.delete(nonce);
+    console.log(`[ap2-hp/dc-response] Token issued checkout=${pendingSession.checkoutId}`);
+
+    res.json({
+      ok:                   true,
+      token:                credData.token,
+      expiry:               credData.expiry,
+      transaction_id:       credData.transaction_id,
+      checkout_id:          pendingSession.checkoutId,
+      ap2_checkout_mandate: chain,
+    });
+  } catch (e) {
+    console.error("[ap2-hp/dc-response] error:", e.message);
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 

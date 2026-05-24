@@ -58,14 +58,7 @@ function b64url(data) {
 }
 
 /**
- * AP2 Mandate を SD-JWT 形式（RFC 9901 / OpenID4VC）で発行する。
- *
- * フォーマット: <header>.<payload>.<sig>~
- *   - typ: "dc+sd-jwt"  (Verifiable Credential as SD-JWT)
- *   - _sd_alg: "sha-256" を payload に追加
- *   - 末尾 "~" は選択的開示なし（全クレームが Issuer-signed JWT に含まれる）
- *
- * WebCrypto の sign() は raw (r||s) を返すので base64url 化をそのまま行える。
+ * AP2 HNP Open Mandate を dc+sd-jwt 形式（Verifiable Credential）で発行する。
  */
 async function signSdJwt(payload, privateKey, headerExtra = {}) {
   const header = { alg: "ES256", typ: "dc+sd-jwt", kid: KEY_ID, ...headerExtra };
@@ -76,8 +69,28 @@ async function signSdJwt(payload, privateKey, headerExtra = {}) {
     privateKey,
     Buffer.from(signingInput),
   );
-  // SD-JWT: <Issuer-signed JWT>~ （選択的開示なし = 末尾 ~ のみ）
   return `${signingInput}.${Buffer.from(sigBuf).toString("base64url")}~`;
+}
+
+/**
+ * AP2 HP L2 Immediate Mandate を kb-sd-jwt 形式で発行する。
+ *
+ * VI spec §L2 準拠:
+ *   typ: "kb-sd-jwt"  — User Key-Bound SD-JWT（即時モード）
+ *   nonce             — リプレイ防止用ランダム値
+ *   aud               — 受信者識別子（デモ: "credential-provider"）
+ *   sd_hash           — L1 へのバインディング（デモ: L1 なしのため省略）
+ *   delegate_payload  — Checkout Mandate + Payment Mandate をインラインで格納
+ */
+async function signKbSdJwt(payload, privateKey) {
+  const header = { alg: "ES256", typ: "kb-sd-jwt", kid: KEY_ID };
+  const signingInput = `${b64url(header)}.${b64url(payload)}`;
+  const sigBuf = await subtle.sign(
+    { name: "ECDSA", hash: { name: "SHA-256" } },
+    privateKey,
+    Buffer.from(signingInput),
+  );
+  return `${signingInput}.${Buffer.from(sigBuf).toString("base64url")}`;
 }
 
 // ─── 登録済み支払い手段（デモ用固定値）───────────────────────────────────────────
@@ -242,6 +255,91 @@ async function handleOpenMandate(body) {
   };
 }
 
+/**
+ * POST /closed-mandate
+ *
+ * HP（Human Present）フロー用クローズド Mandate の生成・署名。
+ * ユーザーが目の前で決済内容を確認した想定で、Trusted Surface の user_sk が
+ * Closed Payment Mandate + Closed Checkout Mandate を直接署名する。
+ * HNP フローと異なり、Open Mandate / cnf（エージェント鍵）は不要。
+ *
+ * 入力:
+ *   payee                  決済先 { id, name }
+ *   payment_amount         決済金額 { amount, currency }
+ *   payment_instrument_id  使用する支払い手段 ID（省略時: 最初の手段）
+ *   checkout_hash          checkout_jwt の SHA-256 ハッシュ（base64url）
+ *   checkout_jwt           Merchant 署名済み Checkout JWT（省略可）
+ *
+ * 出力:
+ *   closed_payment_mandate   vct=mandate.payment.1 の署名付き JWT（TS 署名）
+ *   closed_checkout_mandate  vct=mandate.checkout.1 の署名付き JWT（TS 署名）
+ *   transaction_id           取引識別子
+ *   wallet_public_key        署名検証用 JWK 公開鍵
+ *   expires_at               有効期限（ISO 8601）
+ */
+async function handleClosedMandate(body) {
+  const { payee, payment_amount, payment_instrument_id, checkout_hash, checkout_jwt, nonce } = body;
+
+  if (!payee || !payment_amount) {
+    return { status: 400, body: { error: "payee と payment_amount は必須です" } };
+  }
+
+  const instrumentId  = payment_instrument_id ?? INSTRUMENTS[0].id;
+  const instrument    = INSTRUMENTS.find((i) => i.id === instrumentId) ?? INSTRUMENTS[0];
+  const now           = Math.floor(Date.now() / 1000);
+  const exp           = now + TTL_SEC;
+  // VI spec: transaction_id = checkout_hash（checkout_jwt の SHA-256）
+  const transactionId = checkout_hash ?? randomUUID();
+
+  // VI spec §L2 Immediate — Checkout Mandate (mandate.checkout.1)
+  const checkoutMandate = {
+    vct:          "mandate.checkout.1",
+    checkout_hash: transactionId,
+    ...(checkout_jwt ? { checkout_jwt } : {}),
+  };
+
+  // VI spec §L2 Immediate — Payment Mandate (mandate.payment.1)
+  // transaction_id は checkout_hash と同一値（仕様必須）
+  const paymentMandate = {
+    vct:                "mandate.payment.1",
+    transaction_id:     transactionId,
+    payee,
+    payment_amount,
+    payment_instrument: {
+      id:          instrument.id,
+      type:        instrument.type,
+      description: instrument.description,
+    },
+  };
+
+  // VI spec §L2 — 単一 KB-SD-JWT に両マンデートを delegate_payload として格納
+  const l2Payload = {
+    iss:             ISSUER,
+    aud:             "credential-provider",
+    nonce:           nonce ?? randomUUID(),
+    iat:             now,
+    exp,
+    jti:             randomUUID(),
+    // sd_hash はデモのため省略（実装では L1 SD-JWT へのハッシュバインディング）
+    _sd_alg:         "sha-256",
+    delegate_payload: [checkoutMandate, paymentMandate],
+  };
+
+  const l2Mandate = await signKbSdJwt(l2Payload, KEY_PAIR.privateKey);
+
+  console.log(`[closed-mandate] HP L2 mandate tx=${transactionId} payee=${payee.name}`);
+
+  return {
+    status: 200,
+    body: {
+      l2_mandate:       l2Mandate,
+      transaction_id:   transactionId,
+      wallet_public_key: PUBLIC_JWK,
+      expires_at:        new Date(exp * 1000).toISOString(),
+    },
+  };
+}
+
 // ─── HTTP サーバー ─────────────────────────────────────────────────────────────
 
 const server = createServer(async (req, res) => {
@@ -268,7 +366,7 @@ const server = createServer(async (req, res) => {
     return send(res, 200, { instruments: INSTRUMENTS });
   }
 
-  // POST /open-mandate  — オープン Mandate の署名（認証要）
+  // POST /open-mandate  — オープン Mandate の署名（認証要、HNP フロー）
   if (req.method === "POST" && pathname === "/open-mandate") {
     if (!authorized(req, res)) return;
     try {
@@ -281,6 +379,19 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // POST /closed-mandate  — クローズド Mandate の署名（認証要、HP フロー）
+  if (req.method === "POST" && pathname === "/closed-mandate") {
+    if (!authorized(req, res)) return;
+    try {
+      const body   = await parseBody(req);
+      const result = await handleClosedMandate(body);
+      return send(res, result.status, result.body);
+    } catch (e) {
+      console.error("[closed-mandate] error:", e.message);
+      return send(res, 400, { error: "invalid_request", detail: e.message });
+    }
+  }
+
   return send(res, 404, { error: "not_found" });
 });
 
@@ -288,5 +399,5 @@ server.listen(PORT, () => {
   console.log(`[e-trusted-surface-wallet] http://localhost:${PORT}`);
   console.log(`  Auth: ${API_KEY ? "API key required (x-api-key)" : "open (no auth)"}`);
   console.log(`  Mandate TTL: ${TTL_SEC}s`);
-  console.log(`  Endpoints: GET /jwks  GET /instruments  POST /open-mandate`);
+  console.log(`  Endpoints: GET /jwks  GET /instruments  POST /open-mandate  POST /closed-mandate`);
 });
