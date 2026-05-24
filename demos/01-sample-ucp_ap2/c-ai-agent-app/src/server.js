@@ -32,9 +32,9 @@ const { subtle } = globalThis.crypto;
 let _ap2Session = null;
 // { agentKeyPair, agentPubJwk, openPaymentMandate, openCheckoutMandate, expiresAt, intent, vpToken }
 
-// DC API リクエスト時に生成したエージェント鍵ペアを nonce で保持（init 時に引き継ぐ）
-let _pendingDcRequest = null;
-// { nonce, keyPair, agentPubJwk }
+// DC API セッション管理（nonce→agent keypair の保持）
+const _pendingDcSessions = new Map();
+// Map<nonce, { keyPair, agentPubJwk, createdAt }>
 
 const INSTRUMENT_MAP = {
   card_visa_4242: { id: "card_visa_4242", type: "card", description: "Visa ···· 4242" },
@@ -45,10 +45,13 @@ function b64url(obj) {
   return Buffer.from(JSON.stringify(obj)).toString("base64url");
 }
 
-/** AP2 Closed Mandate 用の KB-SD-JWT をエージェント鍵で署名する */
+/**
+ * L3 Closed Mandate (KB-SD-JWT) をエージェント鍵で署名する。
+ * typ: "kb-sd-jwt"、kid: agentKid を header に付与する（VI spec §5）。
+ */
 async function signAp2Jwt(payload) {
   if (!_ap2Session) throw new Error("AP2 session not initialized");
-  const header = { alg: "ES256", typ: "kb+sd-jwt" };
+  const header = { alg: "ES256", typ: "kb-sd-jwt", kid: _ap2Session.agentKid };
   const input  = `${b64url(header)}.${b64url(payload)}`;
   const sig    = await subtle.sign(
     { name: "ECDSA", hash: { name: "SHA-256" } },
@@ -67,15 +70,13 @@ async function createClosedCheckoutMandate(checkoutData) {
   try {
     const sdHash  = createHash("sha256").update(_ap2Session.openCheckoutMandate).digest("base64url");
     const payload = {
-      iss:                    "shopping-agent",
-      vct:                    "mandate.checkout.1",
-      iat:                    Math.floor(Date.now() / 1000),
-      exp:                    Math.floor(Date.now() / 1000) + 300,
-      jti:                    randomUUID(),
-      sd_hash:                sdHash,
-      checkout_id:            checkoutData.id,
-      checkout_hash:          checkoutData.checkout_hash ?? null,
-      merchant_authorization: checkoutData.checkout_jwt  ?? null,
+      iss:          "shopping-agent",
+      vct:          "mandate.checkout.1",
+      iat:          Math.floor(Date.now() / 1000),
+      exp:          Math.floor(Date.now() / 1000) + 300,
+      jti:          randomUUID(),
+      sd_hash:      sdHash,
+      checkout_jwt: checkoutData.checkout_jwt ?? null,
     };
     return signAp2Jwt(payload);
   } catch (e) {
@@ -97,13 +98,13 @@ async function requestAp2Credential(checkoutData) {
     const sdHash       = createHash("sha256").update(_ap2Session.openPaymentMandate).digest("base64url");
 
     const closedPayload = {
-      iss:                "shopping-agent",
-      vct:                "mandate.payment.1",
-      iat:                Math.floor(Date.now() / 1000),
-      exp:                Math.floor(Date.now() / 1000) + 300,
-      jti:                randomUUID(),
-      sd_hash:            sdHash,
-      transaction_id:     randomUUID(),
+      iss:            "shopping-agent",
+      vct:            "mandate.payment.1",
+      iat:            Math.floor(Date.now() / 1000),
+      exp:            Math.floor(Date.now() / 1000) + 300,
+      jti:            randomUUID(),
+      sd_hash:        sdHash,
+      transaction_id: checkoutData.checkout_hash ?? randomUUID(),
       payment_amount: {
         amount:   intent.amount_range?.max ? Math.min(intent.amount_range.max, 12000) : 12000,
         currency: intent.amount_range?.currency ?? "JPY",
@@ -112,8 +113,7 @@ async function requestAp2Credential(checkoutData) {
         id:   intent.merchants?.[0]?.id   ?? "merchant_1",
         name: intent.merchants?.[0]?.name ?? "Demo Merchant",
       },
-      payment_instrument:  instrument,
-      checkout_jwt_hash:   checkoutData.checkout_hash ?? null,
+      payment_instrument: instrument,
     };
     const closedMandate = await signAp2Jwt(closedPayload);
 
@@ -234,10 +234,10 @@ function resetAp2ChatClient() {
 
 // ── GET /api/ap2/dc-request ──────────────────────────────────────────────────
 //
-// CMWallet (agentic-dpc branch) 向け OpenID4VP リクエストを生成する。
-//   - dcql_query.credentials は配列形式、format: "dc+sd-jwt"、meta.vct_values: ["com.emvco.dpc"]
-//   - transaction_data に type:"delegate" のマンデート提案を base64url エンコードで格納
-//   - エージェント鍵ペアを生成し nonce で保持 → POST /api/ap2/init で引き継ぐ
+// Digital Credentials API 用のリクエストパラメータを生成して返す。
+//   - dcql_query: DPC credential (com.emvco.dpc) を要求
+//   - transaction_data: delegate 型で checkout/payment の Open Mandate 提案を格納
+//   - エージェント鍵ペアを nonce に紐付けて保持 → POST /api/ap2/init で引き継ぐ
 //
 // Query params:
 //   max_amount    最大金額 (JPY, 省略時 50000)
@@ -246,77 +246,74 @@ function resetAp2ChatClient() {
 
 app.get("/api/ap2/dc-request", async (req, res) => {
   try {
-    const nonce       = randomUUID();
-    const origin      = `${req.protocol}://${req.get("host")}`;
-    const maxAmount   = parseInt(req.query.max_amount   ?? "50000", 10);
-    const merchantId  = req.query.merchant_id   ?? "merchant_1";
+    const nonce        = randomUUID();
+    const maxAmount    = parseInt(req.query.max_amount   ?? "50000", 10);
+    const merchantId   = req.query.merchant_id   ?? "merchant_1";
     const merchantName = req.query.merchant_name ?? "Demo Merchant";
-
-    // エージェント鍵ペアを生成し nonce に紐付けて保持
-    const keyPair     = await subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-    const agentPubJwk = await subtle.exportKey("jwk", keyPair.publicKey);
-    _pendingDcRequest = { nonce, keyPair, agentPubJwk };
-
     const exp = Math.floor(Date.now() / 1000) + 3600;
 
-    // ── Checkout Mandate 提案 ──────────────────────────────────────────────
-    // checkout_hash はチェックアウト後に確定するため placeholder を使用。
-    // ウォレットはエージェント公開鍵（cnf.jwk）をマンデートに束縛して署名する。
-    const checkoutMandatePayload = {
-      vct:          "mandate.checkout.1",
-      exp,
-      cnf:          { jwk: agentPubJwk },
-      checkout_hash: "placeholder_hash_bound_at_complete_checkout",
-      checkout_jwt:  "",
-    };
+    const agentKid    = randomUUID();
+    const keyPair     = await subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const rawPubJwk   = await subtle.exportKey("jwk", keyPair.publicKey);
+    const agentPubJwk = { ...rawPubJwk, kid: agentKid };
 
-    // ── Payment Mandate 提案 ───────────────────────────────────────────────
-    // DPC SD-JWT VC（com.emvco.dpc）の payment_instrument を指定。
+    // L2 Autonomous Open Mandate (VI spec §4.2)
     const paymentMandatePayload = {
       vct:            "mandate.payment",
       exp,
       cnf:            { jwk: agentPubJwk },
-      transaction_id: randomUUID(),
       payee:          { id: merchantId, name: merchantName },
       payment_amount: { amount: maxAmount, currency: "JPY" },
-      payment_instrument: {
-        id:          "b3f1c8a2-6d4e-4f9a-9e3d-8a7c2f1b9d34",
-        type:        "dpc",
-        description: "DPC ···· 4444",
+      constraints: {
+        "payment.amount_range":   { max: maxAmount, currency: "JPY" },
+        "payment.allowed_payees": [{ id: merchantId, name: merchantName }],
       },
     };
 
-    // ── delegate item を base64url エンコード（CMWallet 仕様）────────────
+    // L2 Autonomous Open Mandate (VI spec §4.2)
+    const checkoutMandatePayload = {
+      vct: "mandate.checkout",
+      exp,
+      cnf: { jwk: agentPubJwk },
+      constraints: {
+        "checkout.allowed_merchants": [{ id: merchantId, name: merchantName }],
+      },
+    };
+
+    // delegate 型 transaction_data（CMWallet matcher openid4vp1_0.c 準拠）
     const delegateItem = {
-      type:                "delegate",
-      format:              "dc+sd-jwt",
-      credential_ids:      ["dpc_credential"],
-      delegate_payload:    [checkoutMandatePayload, paymentMandatePayload],
+      type:                 "delegate",
+      format:               "dc+sd-jwt",
+      credential_ids:       ["dpc_credential"],
+      delegate_payload:     [paymentMandatePayload, checkoutMandatePayload],
       delegate_disclosures: [],
     };
-    const transactionData = Buffer.from(JSON.stringify(delegateItem)).toString("base64url");
+    const transactionDataEncoded = Buffer.from(JSON.stringify(delegateItem)).toString("base64url");
 
+    _pendingDcSessions.set(nonce, { keyPair, agentPubJwk, agentKid, createdAt: Date.now() });
+
+    // 1時間以上経過したセッションを削除
+    for (const [n, s] of _pendingDcSessions) {
+      if (Date.now() - s.createdAt > 3_600_000) _pendingDcSessions.delete(n);
+    }
+
+    console.log(`[dc-request] nonce=${nonce}`);
     res.json({
       nonce,
-      response_type:  "vp_token",
-      response_mode:  "dc_api",
-      client_id:      origin,
+      response_mode: "dc_api",
       dcql_query: {
-        // credentials は配列形式（CMWallet DCQL 仕様）
-        credentials: [
-          {
-            id:     "dpc_credential",
-            format: "dc+sd-jwt",
-            meta:   { vct_values: ["com.emvco.dpc"] },
-            claims: [
-              { path: ["card_last_four"] },
-              { path: ["card_network_code"] },
-              { path: ["credential_id"] },
-            ],
-          },
-        ],
+        credentials: [{
+          id:     "dpc_credential",
+          format: "dc+sd-jwt",
+          meta:   { vct_values: ["com.emvco.dpc"] },
+          claims: [
+            { path: ["card_last_four"] },
+            { path: ["card_network_code"] },
+            { path: ["credential_id"] },
+          ],
+        }],
       },
-      transaction_data: [transactionData],
+      // transaction_data: [transactionDataEncoded],
     });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -368,18 +365,22 @@ app.post("/api/ap2/init", async (req, res) => {
       error: "TRUSTED_SURFACE_URL が設定されていません。c-ai-agent-app/.env に TRUSTED_SURFACE_URL=http://localhost:3300 を追加してください。",
     });
   }
-  const { intent = {}, vp_token = null, nonce: reqNonce = null } = req.body;
+  const { intent = {}, vp_token = null, nonce = null } = req.body;
   try {
-    // DC API リクエスト時に生成したキーペアを nonce で引き継ぐ（なければ新規生成）
-    let keyPair, agentPubJwk;
-    if (reqNonce && _pendingDcRequest?.nonce === reqNonce) {
-      keyPair          = _pendingDcRequest.keyPair;
-      agentPubJwk      = _pendingDcRequest.agentPubJwk;
-      _pendingDcRequest = null;
-      console.log("[ap2/init] agent keypair inherited from DC API request");
+    // DC API セッションのキーペアを nonce で引き継ぐ（なければ新規生成）
+    let keyPair, agentPubJwk, agentKid;
+    if (nonce && _pendingDcSessions.has(nonce)) {
+      const pendingSession = _pendingDcSessions.get(nonce);
+      keyPair     = pendingSession.keyPair;
+      agentPubJwk = pendingSession.agentPubJwk;
+      agentKid    = pendingSession.agentKid;
+      _pendingDcSessions.delete(nonce);
+      console.log("[ap2/init] agent keypair inherited from DC session");
     } else {
+      agentKid    = randomUUID();
       keyPair     = await subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
-      agentPubJwk = await subtle.exportKey("jwk", keyPair.publicKey);
+      const rawPubJwk = await subtle.exportKey("jwk", keyPair.publicKey);
+      agentPubJwk = { ...rawPubJwk, kid: agentKid };
     }
 
     const tsRes = await fetch(`${TRUSTED_SURFACE_URL}/open-mandate`, {
@@ -396,6 +397,7 @@ app.post("/api/ap2/init", async (req, res) => {
     _ap2Session = {
       agentKeyPair:        keyPair,
       agentPubJwk,
+      agentKid,
       openPaymentMandate:  mandate.open_payment_mandate,
       openCheckoutMandate: mandate.open_checkout_mandate,
       expiresAt:           mandate.expires_at,

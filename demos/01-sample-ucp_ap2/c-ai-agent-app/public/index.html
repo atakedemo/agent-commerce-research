@@ -326,16 +326,7 @@
     }
     .modal-send-btn:hover { opacity: 0.88; }
 
-    /* ── DCQL Preview Modal ── */
-    #dcql-modal-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.55);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1100;
-    }
+    /* ── DC API Modal（委任フロー） ── */
     .dcql-modal {
       background: var(--surface);
       border-radius: 12px;
@@ -383,9 +374,8 @@
       border: none;
       transition: opacity 0.15s;
     }
-    #dcql-confirm-btn { background: var(--accent); color: #fff; }
-    #dcql-cancel-btn  { background: var(--bg); color: var(--text); border: 1px solid var(--border) !important; }
-    #dcql-confirm-btn:hover, #dcql-cancel-btn:hover { opacity: 0.85; }
+    .dcql-modal-actions button { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .dcql-modal-actions button:hover { opacity: 0.85; }
 
     /* ── Payment Handler badge ── */
     .ph-badge {
@@ -899,8 +889,8 @@
           </div>
           <div class="cmwallet-notice" id="cmwallet-notice">
             🪪 <strong>事前準備（Android）:</strong>
-            DPC クレデンシャルを発行したら、<strong>CMWallet アプリを一度起動</strong>してからボタンを押してください。
-            アプリを起動することでクレデンシャルが Android に登録され、ウォレット選択ダイアログに表示されます。
+            DPC クレデンシャルを発行したら <strong>CMWallet アプリ</strong> を起動してクレデンシャルを登録してください。
+            「委任を開始」を押すと Digital Credentials API が呼び出され、CMWallet が起動します（Chrome on Android が必要です）。
           </div>
           <button class="ap2-init-btn" id="ap2-init-btn">🔑 委任を開始</button>
         </div>
@@ -918,26 +908,6 @@
   </div>
 </main>
 
-<!-- ── DCQL Preview Modal ─────────────────────────────────────────────────────── -->
-<div id="dcql-modal-overlay" style="display:none">
-  <div class="dcql-modal">
-    <div class="modal-header">
-      <h3>🔍 OID4VP リクエスト確認</h3>
-      <button class="modal-close" id="dcql-modal-close-btn" title="閉じる">✕</button>
-    </div>
-    <p class="dcql-modal-desc">
-      以下の DCQL クエリを含む OpenID4VP リクエストをウォレットに送信します。<br>
-      内容を確認して「実行」を押すと DC API が呼び出されます。
-    </p>
-    <div class="dcql-modal-body">
-      <pre id="dcql-preview-json"></pre>
-    </div>
-    <div class="dcql-modal-actions">
-      <button id="dcql-cancel-btn">キャンセル</button>
-      <button id="dcql-confirm-btn">▶ 実行</button>
-    </div>
-  </div>
-</div>
 
 <!-- ── Settings Modal ────────────────────────────────────────────────────────── -->
 <div id="settings-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; z-index:1000">
@@ -1725,111 +1695,62 @@ function updateAp2SessionBadge() {
   if (ap2Badge) ap2Badge.style.display = hasData ? "inline" : "none";
 }
 
-/* ── DC API ウォレット連携 ─────────────────────────────────────────────────── */
+/* ── DC API ウォレット連携 ──────────────────────────────────────────────────── */
 
 /**
- * CMWallet (agentic-dpc) 向け DC API プレゼンテーション。
- * - /api/ap2/dc-request にインテント情報を渡してリクエストを生成
- * - navigator.credentials.get() でウォレットに提示要求
- * - vp_token と nonce（エージェント鍵引き継ぎ用）を返す
+ * Digital Credentials API でウォレットから委任クレデンシャルを取得する。
+ * - /api/ap2/dc-request で DCQL・transaction_data（delegate 型）をサーバーが生成
+ * - navigator.credentials.get() で CMWallet を起動
+ * @returns {{ vpToken: any, nonce: string|null, error: string|null }}
  */
-function showDcqlPreviewModal(dcqlQuery) {
-  return new Promise((resolve) => {
-    document.getElementById("dcql-preview-json").textContent =
-      JSON.stringify(dcqlQuery, null, 2);
-    const overlay = document.getElementById("dcql-modal-overlay");
-    overlay.style.display = "flex";
-
-    function cleanup() { overlay.style.display = "none"; }
-
-    function onConfirm() {
-      cleanup();
-      resolve(true);
-    }
-    function onCancel() {
-      cleanup();
-      resolve(false);
-    }
-
-    document.getElementById("dcql-confirm-btn").onclick = onConfirm;
-    document.getElementById("dcql-cancel-btn").onclick  = onCancel;
-    document.getElementById("dcql-modal-close-btn").onclick = onCancel;
-    overlay.onclick = (e) => { if (e.target === overlay) onCancel(); };
-  });
-}
-
 async function tryDcApiPresentation(intentParams = {}) {
-  // if (typeof window.DigitalCredential === "undefined") {
-  //   return { supported: false, vpToken: null, rawData: null, nonce: null, error: "このブラウザは Digital Credentials API に対応していません" };
-  // }
   try {
-    // インテント情報をクエリパラメータで渡す
     const qs = new URLSearchParams({
       ...(intentParams.maxAmount    != null ? { max_amount:    intentParams.maxAmount }    : {}),
-      ...(intentParams.merchantId              ? { merchant_id:   intentParams.merchantId }   : {}),
-      ...(intentParams.merchantName            ? { merchant_name: intentParams.merchantName } : {}),
+      ...(intentParams.merchantId           ? { merchant_id:   intentParams.merchantId }   : {}),
+      ...(intentParams.merchantName         ? { merchant_name: intentParams.merchantName } : {}),
     }).toString();
-    const reqRes  = await fetch("/api/ap2/dc-request" + (qs ? "?" + qs : ""));
-    const presReq = await reqRes.json();
-    const dcNonce = presReq.nonce ?? null;  // エージェント鍵引き継ぎ用 nonce
 
-    // DCQL 確認ポップアップ
-    const confirmed = await showDcqlPreviewModal(presReq.dcql_query);
-    if (!confirmed) {
-      return { supported: true, vpToken: null, rawData: null, nonce: null, error: "ユーザーがキャンセルしました" };
+    const dcRes = await fetch("/api/ap2/dc-request" + (qs ? "?" + qs : ""));
+    if (!dcRes.ok) {
+      const err = await dcRes.json().catch(() => ({}));
+      return { vpToken: null, nonce: null, error: err.error ?? "DC request 失敗" };
+    }
+    const { nonce, dcql_query, transaction_data } = await dcRes.json();
+
+    if (!navigator.credentials || typeof navigator.credentials.get !== "function") {
+      return { vpToken: null, nonce, error: "Digital Credentials API が利用できません（Chrome on Android が必要です）" };
     }
 
-    const controller = new AbortController();
-    const dcResp = await navigator.credentials.get({
-      signal:  controller.signal,
-      digital: {
-        requests: [{
-          protocol: "openid4vp",
-          data: {
-            nonce:         presReq.nonce,
-            response_type: presReq.response_type,
-            response_mode: presReq.response_mode,
-            client_id:     presReq.client_id,
-            dcql_query: {
-              credentials: [
-                {
-                  id:     "dpc_credential",
-                  format: "dc+sd-jwt",
-                  meta:   { vct_values: ["com.emvco.dpc"] },
-                  claims: [
-                    { path: ["card_last_four"] },
-                    { path: ["card_network_code"] },
-                    { path: ["credential_id"] },
-                  ],
-                },
-              ],
-            },
-            transaction_data: presReq.transaction_data,
-          },
-        }],
-      },
-    });
-
-    let rawData = null;
-    let vpToken = null;
+    let credential;
     try {
-      rawData = typeof dcResp.data === "string" ? JSON.parse(dcResp.data) : dcResp.data;
-      // DCQL モード: vp_token はオブジェクト（キー = credential identifier）
-      // CMWallet は dSD-JWT チェーン形式で返す
-      const vt = rawData?.vp_token;
-      vpToken = vt && typeof vt === "object" ? Object.values(vt)[0] : (vt ?? null);
-    } catch { rawData = { raw: dcResp.data }; }
+      credential = await navigator.credentials.get({
+        digital: {
+          requests: [{
+            protocol: "openid4vp-v1-unsigned",
+            data: { nonce, dcql_query, transaction_data },
+          }],
+        },
+      });
+    } catch (e) {
+      return { vpToken: null, nonce, error: `DC API エラー: ${e.message}` };
+    }
 
-    return { supported: true, vpToken, rawData, nonce: dcNonce, error: null };
+    if (!credential?.data) {
+      return { vpToken: null, nonce, error: "クレデンシャルが返されませんでした" };
+    }
+
+    let data;
+    try {
+      data = typeof credential.data === "string" ? JSON.parse(credential.data) : credential.data;
+    } catch {
+      data = {};
+    }
+    const vpToken = data.vp_token ?? null;
+
+    return { vpToken, nonce, error: vpToken ? null : "vp_token が返されませんでした" };
   } catch (e) {
-    const cancelled = e.name === "AbortError" || /cancel|dismiss/i.test(e.message ?? "");
-    return {
-      supported: true,
-      vpToken:   null,
-      rawData:   null,
-      nonce:     null,
-      error:     cancelled ? "ユーザーがキャンセルしました" : e.message,
-    };
+    return { vpToken: null, nonce: null, error: e.message };
   }
 }
 
@@ -1877,27 +1798,17 @@ async function initAp2Session() {
   btn.disabled    = true;
   resultEl.style.display = "none";
 
-  // ── Step 1: DC API ウォレット連携 ──────────────────────────────────────────
-  // インテント情報を渡すことでサーバー側のマンデート提案に反映する
+  // ── Step 1: Digital Credentials API でウォレット連携 ──────────────────────
+  // DCQL・transaction_data（delegate 型）はサーバーが生成。
   btn.textContent = "⏳ ウォレット連携中...";
-  const dcResult  = await tryDcApiPresentation({
-    maxAmount:    maxAmount,
-    merchantId:   merchantId,
-    merchantName: merchantName,
-  });
-  const vpToken   = dcResult.vpToken ?? null;
-  const dcNonce   = dcResult.nonce   ?? null;
+  const dcResult = await tryDcApiPresentation({ maxAmount, merchantId, merchantName });
+  const vpToken  = dcResult.vpToken ?? null;
+  const nonce    = dcResult.nonce   ?? null;
 
   // DC API ステップの状態 HTML（後で init 結果と合わせて表示）
   let dcApiHtml = "";
-  if (!dcResult.supported) {
-    dcApiHtml = `<div class="dc-api-step"><div class="dc-api-step-title">🔐 DC API ウォレット連携</div><div class="dc-api-unsupported">⚠️ DC API 非対応ブラウザのためスキップ（Open Mandate はサーバー側で発行）</div></div>`;
-  } else if (dcResult.error) {
-    const isCancelled = dcResult.error === "ユーザーがキャンセルしました";
-    const errMsg = isCancelled
-      ? `⚠️ ウォレット選択がキャンセルされました。「Your info wasn't found」が表示された場合は <strong>CMWallet アプリを一度起動</strong>してからお試しください。（Open Mandate はサーバー側で発行）`
-      : `⚠️ ${esc(dcResult.error)}（Open Mandate はサーバー側で発行）`;
-    dcApiHtml = `<div class="dc-api-step"><div class="dc-api-step-title">🔐 DC API ウォレット連携</div><div class="dc-api-unsupported">${errMsg}</div></div>`;
+  if (dcResult.error) {
+    dcApiHtml = `<div class="dc-api-step"><div class="dc-api-step-title">🪪 Digital Credentials API</div><div class="dc-api-unsupported">⚠️ ${esc(dcResult.error)}（Open Mandate はサーバー側で発行）</div></div>`;
   } else if (vpToken) {
     dcApiHtml = buildVpTokenBlock(vpToken);
   }
@@ -1917,7 +1828,7 @@ async function initAp2Session() {
           payment_instrument_id: instrumentId,
         },
         vp_token: vpToken,
-        nonce:    dcNonce,
+        nonce,
       }),
     });
     const data = await res.json();
