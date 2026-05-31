@@ -284,6 +284,19 @@ function resetAp2ChatClient() {
 }
 
 /**
+ * checkout_jwt (compact JWT) のペイロード部を Base64url デコードして返す。
+ */
+function decodeJwtPayload(jwt) {
+  if (!jwt) return null;
+  try {
+    const b64 = jwt.split(".")[1];
+    return JSON.parse(Buffer.from(b64, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/**
  * AP2 HP フロー: create_checkout 後に DC API で送る OID4VP リクエストパラメータを生成する。
  * delegate 型 transaction_data に checkout_jwt / payment 情報を含め、
  * CMWallet（Trusted Surface）がユーザー承認後に dSD-JWT チェーンとして L2 Immediate Mandate を返す。
@@ -297,15 +310,23 @@ function generateHpDcParams(checkoutData) {
     id:   session.merchantId   ?? "merchant_1",
     name: session.merchantName ?? "Demo Merchant",
   };
-  const rawAmount = checkoutData.total ?? checkoutData.subtotal ?? checkoutData.grand_total ?? null;
-  const amount    = rawAmount != null ? rawAmount : Math.min(session.maxAmount ?? 50000, 50000);
+
+  // checkout_jwt から合計金額と通貨コードを動的に取得する
+  const jwtPayload = decodeJwtPayload(checkoutData.checkout_jwt);
+  const currency   = jwtPayload?.currency ?? "JPY";
+  const jwtTotal   = jwtPayload?.totals?.total != null ? parseInt(jwtPayload.totals.total, 10) : null;
+  const amount     = !isNaN(jwtTotal) && jwtTotal != null
+    ? jwtTotal
+    : Math.min(session.maxAmount ?? 50000, 50000);
+
+  console.log(`[generateHpDcParams] amount=${amount} currency=${currency} (from checkout_jwt)`);
 
   // WASM が認識する VCT 名を使用（"mandate.payment" / "mandate.checkout"）
   // cnf を含めないことで L2 Immediate（typ:"kb-sd-jwt"）として署名される
   const paymentMandatePayload = {
     vct:               "mandate.payment",
     payee,
-    payment_amount:    { amount, currency: "JPY" },
+    payment_amount:    { amount, currency },
     payment_instrument: instrument,
   };
   const checkoutMandatePayload = {

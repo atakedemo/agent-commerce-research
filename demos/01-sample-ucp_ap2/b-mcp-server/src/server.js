@@ -569,6 +569,10 @@ mcp.registerTool(
 
     // AP2: マーチャント署名付き Checkout JWT を生成する
     const merchantId = process.env.MERCHANT_ID ?? "merchant_1";
+    const jwtLineItems = (rec.checkout.line_items ?? []);
+    const grandTotal = jwtLineItems.reduce((sum, li) => {
+      return sum + (li.unit_price ?? 0) * (li.quantity ?? 1);
+    }, 0);
     const checkoutJwtPayload = {
       order_id: id,
       merchant: {
@@ -576,18 +580,27 @@ mcp.registerTool(
         name:    process.env.MERCHANT_NAME    ?? "Demo Merchant",
         website: process.env.EC_BACKEND_URL   ?? "http://localhost:9000",
       },
-      line_items: (rec.checkout.line_items ?? []).map((li, idx) => {
+      line_items: jwtLineItems.map((li, idx) => {
         const qty       = li.quantity ?? 1;
         const unitPrice = li.unit_price ?? null;
+        const lineTotal = unitPrice != null ? unitPrice * qty : null;
         return {
           id:         li.id ?? `line_${idx + 1}`,
           title:      li.title ?? null,
           variant:    { id: li.item?.id ?? li.variant_id ?? "unknown" },
           quantity:   qty,
-          unit_price: unitPrice,
-          price:      unitPrice != null ? unitPrice * qty : null,
+          // C コード (openid4vp1_0.c) が cJSON_GetStringValue で読むため文字列
+          unit_price: unitPrice != null ? String(unitPrice) : null,
+          ...(lineTotal != null ? {
+            totals: [
+              { type: "subtotal", amount: lineTotal },
+              { type: "total",    amount: lineTotal },
+            ],
+          } : {}),
         };
       }),
+      // C コードの footer: cJSON_GetObjectItem(totals, "total") で文字列として読む
+      totals: { total: String(grandTotal) },
       currency: "JPY",
       iat:      Math.floor(Date.now() / 1000),
     };
