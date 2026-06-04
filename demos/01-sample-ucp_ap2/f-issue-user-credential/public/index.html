@@ -168,7 +168,7 @@
     <!-- Card preview -->
     <div class="card-preview">
       <div class="card-label">Demo Payment Card (DPC)</div>
-      <div class="card-number">•••• •••• •••• 4444</div>
+      <div class="card-number">•••• •••• •••• 9999</div>
       <div class="card-meta">
         <div class="card-meta-item">
           <span class="label">VCT</span>
@@ -193,17 +193,21 @@
         <span class="support-badge unk" id="badgeDcApi">確認中…</span>
         <span class="support-badge unk" id="badgeOid4vci">openid4vci-v1: 確認中…</span>
       </div>
+      <div style="margin-top:0.6rem;font-size:0.78rem;">
+        Issuer URL (Wallet が呼ぶアドレス):
+        <code id="issuerUrl" style="word-break:break-all;">取得中…</code>
+      </div>
     </div>
 
     <!-- Credential info -->
     <div class="info-box">
       <strong>発行するクレデンシャル</strong>
       <ul>
-        <li><code>iss</code>: https://digital-credentials.dev</li>
+        <li><code>iss</code>: <span id="credIss">（Issuer URL と同じ）</span></li>
         <li><code>vct</code>: com.emvco.dpc</li>
-        <li><code>card_last_four</code>: 4444</li>
+        <li><code>card_last_four</code>: 9999</li>
         <li><code>card_network_code</code>: ACME</li>
-        <li><code>credential_id</code>: b3f1c8a2-…-8a7c2f1b9d34</li>
+        <li><code>credential_id</code>: （毎回ランダム生成）</li>
       </ul>
     </div>
 
@@ -220,18 +224,29 @@
   </div>
 
   <footer>
-    CMWallet (agentic-dpc branch) を Android デバイスにインストールしてからお試しください。
+    CMWallet (agentic-dpc branch) をインストールしたデバイスでお試しください。<br>
     Android エミュレータからは <code>http://10.0.2.2:4000</code> でアクセスできます。
   </footer>
 
   <script>
-    const btn        = document.getElementById("btnIssue");
-    const btnLabel   = document.getElementById("btnLabel");
-    const statusBox  = document.getElementById("statusBox");
+    const btn         = document.getElementById("btnIssue");
+    const btnLabel    = document.getElementById("btnLabel");
+    const statusBox   = document.getElementById("statusBox");
     const statusTitle = document.getElementById("statusTitle");
     const statusBody  = document.getElementById("statusBody");
     const badgeDcApi  = document.getElementById("badgeDcApi");
     const badgeOid4vci = document.getElementById("badgeOid4vci");
+    const issuerUrlEl  = document.getElementById("issuerUrl");
+
+    // サーバーが使う issuer URL を取得して表示（CMWallet が呼ぶ URL の確認用）
+    fetch("/api/issuer-info")
+      .then(r => r.json())
+      .then(d => {
+        issuerUrlEl.textContent = d.issuer_base;
+        const credIssEl = document.getElementById("credIss");
+        if (credIssEl) credIssEl.textContent = d.issuer_base;
+      })
+      .catch(() => { issuerUrlEl.textContent = "取得失敗"; });
 
     function esc(s) {
       return String(s)
@@ -247,81 +262,39 @@
     }
 
     // ── Feature detection ────────────────────────────────────────────────────
-    let dcApiAvailable = false;
-
     function checkSupport() {
-      // const hasDc = typeof window.DigitalCredential !== "undefined";
-      // if (!hasDc) {
-      //   badgeDcApi.textContent = "DC API: 非対応";
-      //   badgeDcApi.className = "support-badge ng";
-      //   badgeOid4vci.textContent = "openid4vci-v1: 非対応";
-      //   badgeOid4vci.className = "support-badge ng";
-      //   btn.disabled = false;
-      //   btnLabel.textContent = "クレデンシャルを発行（DC API 非対応 — シミュレーション）";
-      //   showStatus("info", "ℹ️ DC API 非対応ブラウザ", [
-      //     "このブラウザは <code>DigitalCredential</code> API に対応していません。",
-      //     "Chrome 143 以降 + Google Play Services 24.0 以降の Android デバイスが必要です。",
-      //     "<br><br>",
-      //     "ボタンを押すとサーバー側の OID4VCI フローをシミュレーションし、",
-      //     "発行される SD-JWT VC の内容を確認できます。",
-      //   ].join(""));
-      //   return;
-      // }
+      const hasDc = typeof window.DigitalCredential !== "undefined";
+      if (!hasDc) {
+        badgeDcApi.textContent = "DC API: 非対応";
+        badgeDcApi.className = "support-badge ng";
+        badgeOid4vci.textContent = "openid4vci-v1: 非対応";
+        badgeOid4vci.className = "support-badge ng";
+        showStatus("info", "ℹ️ DC API 非対応",
+          "このブラウザは Digital Credentials API に対応していません。<br>" +
+          "DC API 対応ブラウザ（Chrome 128 以降）でお試しください。"
+        );
+        return;
+      }
+
       badgeDcApi.textContent = "DC API: 対応";
       badgeDcApi.className = "support-badge ok";
 
-      // const hasProto = typeof DigitalCredential.userAgentAllowsProtocol === "function"
-      //   && DigitalCredential.userAgentAllowsProtocol("openid4vci-v1");
-      // if (hasProto) {
+      const hasProto = typeof DigitalCredential.userAgentAllowsProtocol === "function"
+        && DigitalCredential.userAgentAllowsProtocol("openid4vci-v1");
+
+      if (hasProto) {
         badgeOid4vci.textContent = "openid4vci-v1: 対応";
         badgeOid4vci.className = "support-badge ok";
-        dcApiAvailable = true;
-      // } else {
-      //   badgeOid4vci.textContent = "openid4vci-v1: 非対応";
-      //   badgeOid4vci.className = "support-badge ng";
-      // }
+      } else {
+        badgeOid4vci.textContent = "openid4vci-v1: 非対応";
+        badgeOid4vci.className = "support-badge ng";
+        showStatus("info", "ℹ️ openid4vci-v1 非対応",
+          "DC API は存在しますが <code>openid4vci-v1</code> プロトコルに対応していません。"
+        );
+        return;
+      }
 
       btn.disabled = false;
-      if (!dcApiAvailable) {
-        btnLabel.textContent = "クレデンシャルを発行（openid4vci-v1 非対応 — シミュレーション）";
-      }
-    }
-
-    // ── Simulate flow (non-DC API path) ─────────────────────────────────────
-    async function simulateIssuance() {
-      showStatus("info", "⏳ OID4VCI フローを実行中…", "サーバーから credential offer を取得しています…");
-
-      const offerRes = await fetch("/api/credential-offer");
-      const offer = await offerRes.json();
-      const preAuthCode = offer.grants?.["urn:ietf:params:oauth:grant-type:pre-authorized_code"]?.["pre-authorized_code"];
-
-      showStatus("info", "⏳ トークンを取得中…", "pre-authorized_code でトークンを要求しています…");
-
-      const tokenRes = await fetch("/token", {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
-          "pre-authorized_code": preAuthCode,
-        }),
-      });
-      const tokenData = await tokenRes.json();
-      if (!tokenRes.ok) throw new Error(tokenData.error_description ?? tokenData.error ?? "Token request failed");
-
-      showStatus("info", "⏳ クレデンシャルを取得中…", "credential エンドポイントにリクエストを送信しています…");
-
-      const credRes = await fetch("/credential", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "authorization": `Bearer ${tokenData.access_token}`,
-        },
-        body: JSON.stringify({ format: "dc+sd-jwt" }),
-      });
-      const credData = await credRes.json();
-      if (!credRes.ok) throw new Error(credData.error ?? "Credential request failed");
-
-      return credData.credential;
     }
 
     // ── DC API issuance ──────────────────────────────────────────────────────
@@ -336,6 +309,7 @@
         "ウォレット選択ダイアログが表示されたら CMWallet を選択してください。"
       );
 
+      // DC API は data を object として要求する（JSON 文字列不可）
       const result = await navigator.credentials.create({
         digital: {
           requests: [{
@@ -354,58 +328,33 @@
       btnLabel.textContent = "⏳ 発行中…";
 
       try {
-        if (dcApiAvailable) {
-          // DC API path
-          const result = await dcApiIssuance();
-          showStatus("success", "✅ クレデンシャル発行完了",
-            "ウォレットへのクレデンシャル発行が完了しました。<br><br>" +
-            "DC API レスポンス:<br>" +
-            `<pre class="credential-raw">${esc(JSON.stringify(result, null, 2))}</pre>`
-          );
-        } else {
-          // Simulation path
-          const credential = await simulateIssuance();
-          const parts = credential.split("~")[0].split(".");
-          let payloadInfo = "";
-          try {
-            const raw = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-            payloadInfo =
-              `<code>iss</code>: ${esc(raw.iss)}<br>` +
-              `<code>vct</code>: ${esc(raw.vct)}<br>` +
-              `<code>exp</code>: ${new Date(raw.exp * 1000).toISOString()}<br>`;
-          } catch {}
-
-          showStatus("success", "✅ シミュレーション発行完了（DC API 非対応）",
-            "OID4VCI フローが正常に完了しました。<br><br>" +
-            payloadInfo +
-            "<br>SD-JWT (先頭 120 文字):<br>" +
-            `<pre class="credential-raw">${esc(credential.slice(0, 120) + "…")}</pre>` +
-            `<details style="margin-top:0.5rem"><summary style="cursor:pointer;color:var(--accent);font-size:0.8rem">完全な SD-JWT を表示</summary>` +
-            `<pre class="credential-raw">${esc(credential)}</pre></details>`
-          );
-        }
+        const result = await dcApiIssuance();
+        showStatus("success", "✅ クレデンシャル発行完了",
+          "ウォレットへのクレデンシャル発行が完了しました。<br><br>" +
+          "DC API レスポンス:<br>" +
+          `<pre class="credential-raw">${esc(JSON.stringify(result, null, 2))}</pre>`
+        );
       } catch (e) {
-        const msg = e.message ?? String(e);
-        const cancelled = e.name === "AbortError" || /cancel|dismiss/i.test(msg);
-        // CMWallet (agentic-dpc) はクレデンシャルをウォレットに保存した後、
-        // DC API への完了レスポンスを返さないため "Error retrieving token" をスローする。
-        // 発行自体は成功しているので success 扱いにする。
-        const issuedWithoutResponse = dcApiAvailable && /retrieving.*token|token.*retriev/i.test(msg);
-        if (issuedWithoutResponse) {
-          showStatus("success", "✅ クレデンシャル発行完了",
-            "CMWallet へのクレデンシャル発行が完了しました。<br>" +
-            "（DC API の完了レスポンスは未実装のため、ウォレットアプリで受信を確認してください）"
-          );
-        } else if (cancelled) {
+        const msg  = e.message ?? String(e);
+        const name = e.name    ?? "Error";
+
+        if (name === "AbortError" || /cancel|dismiss/i.test(msg)) {
           showStatus("info", "ℹ️ キャンセルされました", "ウォレット選択がキャンセルされました。");
         } else {
-          showStatus("error", "❌ エラー", esc(msg));
+          const issuerUrl = issuerUrlEl.textContent;
+          const hint = /token|credential|network|fetch|connect|reach/i.test(msg)
+            ? `<br><br>💡 <strong>確認事項:</strong> Wallet が呼ぶ Issuer URL がデバイス側から到達可能か確認してください。<br>` +
+              `現在の Issuer URL: <code>${esc(issuerUrl)}</code><br>` +
+              `エミュレータの場合は <code>ISSUER_BASE_URL=http://10.0.2.2:4000</code> を設定してサーバーを再起動してください。<br>` +
+              `実機・PC の場合は ngrok などで HTTPS URL を使用してください。`
+            : "";
+          showStatus("error", "❌ Wallet エラー",
+            `<code>${esc(name)}: ${esc(msg)}</code>${hint}`
+          );
         }
       } finally {
         btn.disabled = false;
-        btnLabel.textContent = dcApiAvailable
-          ? "クレデンシャルを発行"
-          : "クレデンシャルを発行（DC API 非対応 — シミュレーション）";
+        btnLabel.textContent = "クレデンシャルを発行";
       }
     });
 

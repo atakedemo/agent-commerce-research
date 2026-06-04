@@ -1,5 +1,5 @@
 import express from "express";
-import { randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -7,48 +7,124 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT ?? 4000;
 
-// ngrok など reverse proxy 経由時に X-Forwarded-Proto を信頼し、
-// req.protocol が正しく "https" になるようにする
 app.set("trust proxy", 1);
-
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(join(__dirname, "../public")));
 
-// ── Hardcoded DPC SD-JWT from CMWallet DpcSdJwtMandateTest.kt ───────────────
-// Source: https://github.com/digitalcredentialsdev/CMWallet/blob/agentic-dpc/
-//         app/src/test/java/com/credman/cmwallet/DpcSdJwtMandateTest.kt
-//
-// vct: "com.emvco.dpc"  |  iss: "https://digital-credentials.dev"
-// card_last_four: "4444"  |  card_network_code: "ACME"
-// credential_id: "b3f1c8a2-6d4e-4f9a-9e3d-8a7c2f1b9d34"
-// eslint-disable-next-line max-len
-const DPC_SD_JWT =
-  "eyJhbGciOiAiRVMyNTYiLCAidHlwIjogImRjK3NkLWp3dCIsICJ4NWMiOiBbIk1JSUM1akNDQW8yZ0F3SUJBZ0lVRVJjNEQzRVpQY25MdXg2N1ZWZDU0d2lrWGRjd0NnWUlLb1pJemowRUF3SXdlakVMTUFrR0ExVUVCaE1DVlZNeEV6QVJCZ05WQkFnTUNrTmhiR2xtYjNKdWFXRXhGakFVQmdOVkJBY01EVTF2ZFc1MFlXbHVJRlpwWlhjeEhEQWFCZ05WQkFvTUUwUnBaMmwwWVd3Z1EzSmxaR1Z1ZEdsaGJITXhJREFlQmdOVkJBTU1GMlJwWjJsMFlXd3RZM0psWkdWdWRHbGhiSE11WkdWMk1CNFhEVEkxTURReU5URTBNVEl5TmxvWERUSTJNRFF5TlRFME1USXlObG93ZWpFTE1Ba0dBMVVFQmhNQ1ZWTXhFekFSQmdOVkJBZ01Da05oYkdsbWIzSnVhV0V4RmpBVUJnTlZCQWNNRFUxdmRXNTBZV2x1SUZacFpYY3hIREFhQmdOVkJBb01FMFJwWjJsMFlXd2dRM0psWkdWdWRHbGhiSE14SURBZUJnTlZCQU1NRjJScFoybDBZV3d0WTNKbFpHVnVkR2xoYkhNdVpHVjJNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBEQVFjRFFnQUV1TGQ1aUhPK05UNlJzNDZwQkFrQWM4RW1mb3gvOGtqSXJFclF2UGFBSjMxemRWWEV2a1pPZFFqV0wydy9xblJKZ2c0c2hETnp5RUZ0UENqMTg0WExGcU9COERDQjdUQWZCZ05WSFNNRUdEQVdnQlQ2aVpRaFo0NG83Mi9lWGZyZHpxMXBUSTdQQ2pBZEJnTlZIUTRFRmdRVWc3ZE1LSjViaElVTnBsS2RmWFlhUkdQQ2dOVXdJZ1lEVlIwUkJCc3dHWUlYWkdsbmFYUmhiQzFqY21Wa1pXNTBhV0ZzY3k1a1pYWXdOQVlEVlIwZkJDMHdLekFwb0NlZ0pZWWphSFIwY0hNNkx5OWthV2RwZEdGc0xXTnlaV1JsYm5ScFlXeHpMbVJsZGk5amNtd3dLZ1lEVlIwU0JDTXdJWVlmYUhSMGNITTZMeTlrYVdkcGRHRnNMV055WldSbGJuUnBZV3h6TG1SbGRqQU9CZ05WSFE0QkFmOEVCQU1DQjRBd0ZRWURWUjBsQVFIL0JBc3dDUVlIS0lHTVhRVUJBakFLQmdncWhrak9QUVFEQWdOSEFEQkVBaUFnR3VXekxpdnJGbTRWOU41SEN5Z1ErbHU2am9zN2FlZ0d1N2xaOEs1WFFRSWdLM1N0Rm5nL2YwTTdhcUZGWGs1S0VUUTN1UUZtY3JUcVE3eHJwWWF3dTFNPSIsICJNSUlDdVRDQ0FsK2dBd0lCQWdJVVE3aG5TbTNrSWRGdUFOYW5GcGs0ekVkeW4xc3dDZ1lJS29aSXpqMEVBd0l3ZWpFTE1Ba0dBMVVFQmhNQ1ZWTXhFekFSQmdOVkJBZ01Da05oYkdsbWIzSnVhV0V4RmpBVUJnTlZCQWNNRFUxdmRXNTBZV2x1SUZacFpYY3hIREFhQmdOVkJBb01FMFJwWjJsMFlXd2dRM0psWkdWdWRHbGhiSE14SURBZUJnTlZCQU1NRjJScFoybDBZV3d0WTNKbFpHVnVkR2xoYkhNdVpHVjJNQjRYRFRJMU1EUXlOVEUwTVRJeU5sb1hEVE0xTURReE16RTBNVEl5Tmxvd2VqRUxNQWtHQTFVRUJoTUNWVk14RXpBUkJnTlZCQWdNQ2tOaGJHbG1iM0p1YVdFeEZqQVVCZ05WQkFjTURVMXZkVzUwWVdsdUlGWnBaWGN4SERBYUJnTlZCQW9NRTBScFoybDBZV3dnUTNKbFpHVnVkR2xoYkhNeElEQWVCZ05WQkFNTUYyUnBaMmwwWVd3dFkzSmxaR1Z1ZEdsaGJITXVaR1YyTUZrd0V3WUhLb1pJemowQ0FRWUlLb1pJemowREFRY0RRZ0FFcUlEL0lLV21UMGVlYmQzaEd5OEIwQ2R6VDlxclliOG5IYVFSNGJFNG5YVVFCSEF3ZFd5bTJqakxmYjVXbzJzSCtSdkZrRkFwUG5tdjBhcFA3SXkwaTZPQndqQ0J2ekFpQmdOVkhSRUVHekFaZ2hka2FXZHBkR0ZzTFdOeVpXUmxiblJwWVd4ekxtUmxkakFkQmdOVkhRNEVGZ1FVK29tVUlXZk9LTzl2M2wzNjNjNnRhVXlPendvd0h3WURWUjBqQkJnd0ZvQVUrb21VSVdmT0tPOXYzbDM2M2M2dGFVeU96d293RWdZRFZSMFRBUUgvQkFnd0JnRUIvd0lCQURBT0JnTlZIUThCQWY0RUJBTUNBUVl3S2dZRFZSMEVCQkN3R1lJZmFIUjBjSE02THk5a2FXZHBkR0ZzTFdOeVpXUmxiblJwWVd4ekxtUmxkakFKQmdOVkhSOEVBakFBTUFvR0NDcUdTTTQ5QkFNQ0EwZ0FNRVVDSUEwdFc0ayt1SEFsOXRmNFdOa3NxRVIwT1JLK2pHd1NoV2Z2RjJtVzZKenZBaUVBaGhjQUxxNm1sSmd2MThwZnpjZ1B6N3lPMTc1bmxFWTF0ZVlpYVBmWWluczgiXX0" +
-  ".eyJfc2QiOiBbIjB5Z1NJTWJ5Q3pfU0FMN0NyWmVEZ19DM0FucUpWZ2YzNUkxdDFpZTBSWnMiLCAiMWlwU2VqQUF3X2xBU09lTnNHYmozUl8zTVpOUnRhbGdVOU1ZdmM3M1o1ZyIsICIzZF9rc0xhWTdOQXl1OVBRWm9kUkI0WHNxRjJqcXVDc2wyYXZPbG5XQ200IiwgIlBCaFc0MkFUSnFjczNfb2RWaEh1VEdFRGhON2lkRG1aTUxMT1JSLWxBZWMiLCAiUE5TSlJYekdQY0J5RUwzX2pGbWM0amd6eEpVSnNUbXVESkZvamtUeXNEMCIsICJSQVdnNVhmOXFoaVA3N3BiMVI0TVlZLXJWMjExSlRvS3ZBeF9SdzVzUjd3IiwgInBYamJuUmpuMjhKUlVKRHcxa3VVOGtIck5HQWZUQXNzazhCTTF5MUlEd0kiLCAieUdYclZnYjlIS0dJVTluNndFVlBkc3hhZmRGSUllVllSZHI3MkRVOWdpTSJdLCAiaXNzIjogImh0dHBzOi8vZGlnaXRhbC1jcmVkZW50aWFscy5kZXYiLCAiaWF0IjogMTY4MzAwMDAwMCwgImV4cCI6IDE4ODMwMDAwMDAsICJ2Y3QiOiAiY29tLmVtdmNvLmRwYyIsICJfc2RfYWxnIjogInNoYS0yNTYiLCAiY25mIjogeyJqd2siOiB7Imt0eSI6ICJFQyIsICJjcnYiOiAiUC0yNTYiLCAieCI6ICI4akJXcml1SkJZLS11X18yak9KZmNYNEpqNGtFcVk0Q1VYOWNmMWJRZGRZIiwgInkiOiAiY3NIMmtPR2hsZW1oUlJ1UFVZRktKWVpnVlFFWFFoMkpmb3RSS0dSMWZMRSJ9fX0" +
-  ".Coglr0YLOqUrjDLP7nBl_OCWggnn8mO_DrL_Oc7XI2R8xHJvA0fzK3nnSns0sDZ_sAvP7wbmR28eJj1dk8XmDw" +
-  "~WyJiWk5wbVRlb0w1dFlVN2dLVFZrVFVBIiwgImNhcmRfbGFzdF9mb3VyIiwgIjQ0NDQiXQ" +
-  "~WyJXR01wb2pPQWMtcUVfaUV5bUEyUmlRIiwgImNhcmRfYXJ0X3VybCIsICJodHRwczovL3BvY2tldGJhbmsuZXhhbXBsZS9jYXJkLnBuZyJd" +
-  "~WyJCdThHaWU5NDluQWdCZEw2QjY1N013IiwgImNhcmRfbmV0d29ya19jb2RlIiwgIkFDTUUiXQ" +
-  "~WyJlNVlrMS01RjM2RlNpa2JWUVhCRFh3IiwgImNhcmRfY29iYWRnZWRfbmV0d29ya19jb2RlIiwgIkxBU0VSIl0" +
-  "~WyJ2eklEdUdxOFcxMTcybW5UWUcxOEp3IiwgImNhcmRfYmluIiwgIjk5MDAwMSJd" +
-  "~WyJFbHIxTmV6QVVHTzBLN21UNUNhVDN3IiwgImNhcmRfaWQiLCAiNWQ4ZjdlOWMwYTEyIl0" +
-  "~WyIzOGtxMzBtYzZmZ1MxYnVyeTh1UWtnIiwgImNhcmRfcGFyIiwgIjk5MDBBQ0sxMjNYWVo3ODlMTU5PUFFSU1RVVldYIl0" +
-  "~WyJNUThsck5rQXdZbGF2TVQ4b3duNERBIiwgImNyZWRlbnRpYWxfaWQiLCAiYjNmMWM4YTItNmQ0ZS00ZjlhLTllM2QtOGE3YzJmMWI5ZDM0Il0" +
-  "~";
+// CMWallet は Android プロセスとして /token・/credential を直接呼ぶため CORS ヘッダーが必要
+app.use((req, res, next) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, DPoP, oauth-client-attestation, oauth-client-attestation-pop");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
+// CMWallet からのリクエストを全てログに出力（デバッグ用）
+app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.path} UA=${req.get("user-agent") ?? "-"}`);
+  if (req.method === "POST") {
+    console.log(`[REQ] body=${JSON.stringify(req.body)}`);
+  }
+  next();
+});
+
+// ── Issuer EC P-256 key pair (generated once at startup) ─────────────────────
+let _keyPair = null;
+let _publicJwk = null;
+
+async function getKeyPair() {
+  if (_keyPair) return { keyPair: _keyPair, publicJwk: _publicJwk };
+  _keyPair = await globalThis.crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,           // extractable (needed for JWK export and jwks.json)
+    ["sign", "verify"],
+  );
+  _publicJwk = await globalThis.crypto.subtle.exportKey("jwk", _keyPair.publicKey);
+  console.log("[startup] EC P-256 issuer key pair generated");
+  return { keyPair: _keyPair, publicJwk: _publicJwk };
+}
+
+// ── SD-JWT helpers ───────────────────────────────────────────────────────────
+function b64url(data) {
+  return Buffer.from(data).toString("base64url");
+}
+
+function makeDisclosure(name, value) {
+  const salt = randomBytes(16).toString("base64url");
+  const disclosure = b64url(JSON.stringify([salt, name, value]));
+  const hash = createHash("sha256").update(disclosure).digest("base64url");
+  return { disclosure, hash };
+}
+
+async function issueDpcSdJwt(issuerUrl) {
+  const { keyPair, publicJwk } = await getKeyPair();
+  const now = Math.floor(Date.now() / 1000);
+
+  const selectiveClaims = [
+    ["card_last_four",             "9999"],
+    ["card_art_url",               "https://pocketbank.example/card.png"],
+    ["card_network_code",          "ACME"],
+    ["card_cobadged_network_code", "LASER"],
+    ["card_bin",                   "990001"],
+    ["card_id",                    "5d8f7e9c0a12"],
+    ["card_par",                   "9900ACK123XYZ789LMNOPQRSTUVWX"],
+    ["credential_id",              randomUUID()],
+  ];
+
+  const disclosures = selectiveClaims.map(([n, v]) => makeDisclosure(n, v));
+
+  // jwk in header allows CMWallet to verify without fetching jwks_uri
+  const header = { alg: "ES256", typ: "dc+sd-jwt", jwk: publicJwk };
+  const payload = {
+    _sd:     disclosures.map(d => d.hash),
+    iss:     issuerUrl,
+    iat:     now,
+    exp:     now + 86400 * 3650, // ~10 years
+    vct:     "com.emvco.dpc",
+    _sd_alg: "sha-256",
+  };
+
+  const headerB64  = b64url(JSON.stringify(header));
+  const payloadB64 = b64url(JSON.stringify(payload));
+  const toSign     = `${headerB64}.${payloadB64}`;
+
+  const rawSig = await globalThis.crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    keyPair.privateKey,
+    new TextEncoder().encode(toSign),
+  );
+
+  const sigB64 = Buffer.from(rawSig).toString("base64url");
+  return `${toSign}.${sigB64}~${disclosures.map(d => d.disclosure).join("~")}~`;
+}
 
 // ── In-memory session stores ─────────────────────────────────────────────────
 const preAuthCodes  = new Map(); // code  → { expiresAt }
 const accessTokens  = new Map(); // token → { expiresAt }
 
 function issuerBase(req) {
+  if (process.env.ISSUER_BASE_URL) {
+    return process.env.ISSUER_BASE_URL.replace(/\/$/, "");
+  }
   return `${req.protocol}://${req.get("host")}`;
+}
+
+function authServerMetadata(base) {
+  return {
+    issuer:                base,
+    token_endpoint:        `${base}/token`,
+    grant_types_supported: ["urn:ietf:params:oauth:grant-type:pre-authorized_code"],
+  };
 }
 
 function credentialIssuerMetadata(base) {
   return {
-    credential_issuer: base,
-    credential_endpoint: `${base}/credential`,
+    credential_issuer:    base,
+    token_endpoint:       `${base}/token`,
+    credential_endpoint:  `${base}/credential`,
+    jwks_uri:             `${base}/.well-known/jwks.json`,
     credential_configurations_supported: {
       "com.emvco.dpc": {
         format: "dc+sd-jwt",
@@ -56,7 +132,7 @@ function credentialIssuerMetadata(base) {
         scope:  "com.emvco.dpc",
         display: [
           {
-            name:             "DPC Card ···· 4444",
+            name:             "DPC Card ···· 9999",
             locale:           "en-US",
             background_color: "#1a2f5e",
             text_color:       "#ffffff",
@@ -77,14 +153,33 @@ function credentialIssuerMetadata(base) {
   };
 }
 
+// ── GET /api/issuer-info ─────────────────────────────────────────────────────
+app.get("/api/issuer-info", (req, res) => {
+  res.json({ issuer_base: issuerBase(req) });
+});
+
+// ── GET /.well-known/jwks.json ───────────────────────────────────────────────
+app.get("/.well-known/jwks.json", async (req, res) => {
+  const { publicJwk } = await getKeyPair();
+  res.json({ keys: [{ ...publicJwk, kid: "issuer-key-1", use: "sig" }] });
+});
+
 // ── GET /.well-known/openid-credential-issuer ────────────────────────────────
 app.get("/.well-known/openid-credential-issuer", (req, res) => {
   res.json(credentialIssuerMetadata(issuerBase(req)));
 });
 
+// ── GET /.well-known/oauth-authorization-server ──────────────────────────────
+app.get("/.well-known/oauth-authorization-server", (req, res) => {
+  res.json(authServerMetadata(issuerBase(req)));
+});
+
+// ── GET /.well-known/openid-configuration ────────────────────────────────────
+app.get("/.well-known/openid-configuration", (req, res) => {
+  res.json(authServerMetadata(issuerBase(req)));
+});
+
 // ── GET /api/credential-offer ────────────────────────────────────────────────
-// Returns a full OID4VCI credential offer (inline metadata variant).
-// DC API openid4vci-v1 passes this object directly as `data` in the request.
 app.get("/api/credential-offer", (req, res) => {
   const base = issuerBase(req);
   const code = randomUUID();
@@ -98,21 +193,17 @@ app.get("/api/credential-offer", (req, res) => {
         "pre-authorized_code": code,
       },
     },
-    authorization_server_metadata: {
-      issuer:              base,
-      token_endpoint:      `${base}/token`,
-      grant_types_supported: [
-        "urn:ietf:params:oauth:grant-type:pre-authorized_code",
-      ],
-    },
-    credential_issuer_metadata: credentialIssuerMetadata(base),
+    authorization_server_metadata: authServerMetadata(base),
+    credential_issuer_metadata:   credentialIssuerMetadata(base),
   });
 });
 
 // ── POST /token ──────────────────────────────────────────────────────────────
 app.post("/token", (req, res) => {
-  const grantType    = req.body.grant_type;
-  const preAuthCode  = req.body["pre-authorized_code"];
+  const grantType   = req.body.grant_type;
+  const preAuthCode = req.body["pre-authorized_code"];
+  const hasDpop     = !!req.headers["dpop"];
+  console.log(`[token] grant_type=${grantType} code=${preAuthCode?.slice(0, 8)}… dpop=${hasDpop} knownCodes=${preAuthCodes.size}`);
 
   if (grantType !== "urn:ietf:params:oauth:grant-type:pre-authorized_code") {
     return res.status(400).json({ error: "unsupported_grant_type" });
@@ -128,19 +219,22 @@ app.post("/token", (req, res) => {
   const token = randomUUID();
   accessTokens.set(token, { expiresAt: Date.now() + 300_000 }); // 5 min
 
-  console.log(`[token] issued access_token for pre-authorized_code=${preAuthCode.slice(0, 8)}…`);
+  const tokenType = hasDpop ? "DPoP" : "Bearer";
+  console.log(`[token] issued token_type=${tokenType}`);
   res.json({
     access_token: token,
-    token_type:   "Bearer",
+    token_type:   tokenType,
     expires_in:   300,
     c_nonce:      randomUUID(),
   });
 });
 
 // ── POST /credential ─────────────────────────────────────────────────────────
-app.post("/credential", (req, res) => {
+app.post("/credential", async (req, res) => {
   const authHeader = req.headers.authorization ?? "";
-  const token = authHeader.replace(/^Bearer\s+/i, "");
+  // CMWallet は DPoP を使うため "Authorization: DPoP <token>" を送る。Bearer も受け付ける。
+  const token = authHeader.replace(/^(Bearer|DPoP)\s+/i, "");
+  console.log(`[credential] auth_scheme=${authHeader.split(" ")[0]} token=${token.slice(0, 8)}…`);
 
   const session = accessTokens.get(token);
   if (!session || session.expiresAt < Date.now()) {
@@ -154,11 +248,9 @@ app.post("/credential", (req, res) => {
     return res.status(400).json({ error: "unsupported_credential_format" });
   }
 
-  console.log("[credential] issuing DPC SD-JWT");
-  res.json({
-    credential: DPC_SD_JWT,
-    format:     "dc+sd-jwt",
-  });
+  console.log("[credential] issuing DPC SD-JWT dynamically");
+  const credential = await issueDpcSdJwt(issuerBase(req));
+  res.json({ credential, format: "dc+sd-jwt" });
 });
 
 // ── Cleanup expired sessions (every 5 min) ───────────────────────────────────
@@ -167,6 +259,9 @@ setInterval(() => {
   for (const [k, v] of preAuthCodes) if (v.expiresAt < now) preAuthCodes.delete(k);
   for (const [k, v] of accessTokens) if (v.expiresAt < now) accessTokens.delete(k);
 }, 300_000);
+
+// Pre-warm the key pair at startup
+getKeyPair().catch(err => console.error("[startup] key pair generation failed:", err));
 
 app.listen(PORT, () => {
   console.log(`DPC Credential Issuer running at http://localhost:${PORT}`);
