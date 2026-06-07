@@ -1,5 +1,30 @@
 # バックエンド API 一覧
 
+## d-payment_handler-credential_provider 認証 API（`http://localhost:3200`）
+
+| メソッド | パス | 認証 | 説明 |
+|---|---|---|---|
+| `POST` | `/auth/signup` | 不要 | 新規登録。`{ email, password, profile? }` |
+| `POST` | `/auth/login` | 不要 | ログイン。`{ email, password }` |
+| `POST` | `/auth/google` | 不要 | Google SSO。`{ id_token }` — Google tokeninfo で検証 |
+| `GET` | `/auth/me` | Bearer | 現在のユーザー情報取得 |
+| `POST` | `/auth/logout` | Bearer | トークン失効 |
+
+レスポンス（signup / login / google）:
+```json
+{
+  "access_token": "ph_tok_...",
+  "expires_at": "2026-06-01T00:00:00.000Z",
+  "user": { "userId": "...", "email": "...", "profile": {} }
+}
+```
+
+c-ai-agent-app からは `/api/auth/*` でプロキシ。セッションはサーバー in-memory で保持（再起動でリセット）。
+
+---
+
+## a-sandbox-ec API（`http://localhost:9000`）
+
 対象: `apps/backend`（Medusa 2.14）。開発時の既定ベース URL は `http://localhost:9000` を想定する。
 
 - **OpenAPI 3.0（本書の HTTP API）**: 同ディレクトリの [`openapi.yaml`](openapi.yaml)（MCP Tools は含まない）。

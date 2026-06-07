@@ -22,12 +22,16 @@ const __dirname           = dirname(fileURLToPath(import.meta.url));
 const PORT                = process.env.PORT                        ?? 3100;
 const PAYMENT_HANDLER_URL = process.env.PAYMENT_HANDLER_URL?.replace(/\/$/, "") ?? null;
 const TRUSTED_SURFACE_URL = process.env.TRUSTED_SURFACE_URL?.replace(/\/$/, "") ?? null;
+const GOOGLE_CLIENT_ID    = process.env.GOOGLE_CLIENT_ID ?? null;
 
 // ─── WebCrypto（AP2 エージェント鍵署名用）────────────────────────────────────
 
 const { subtle } = globalThis.crypto;
 
 // ─── AP2 セッション状態（サーバー起動中は in-memory で保持）─────────────────
+
+let _authSession = null;
+// { userId, email, profile, accessToken } — Payment Handler auth セッション
 
 let _ap2Session = null;
 // { agentKeyPair, agentPubJwk, openPaymentMandate, openCheckoutMandate, expiresAt, intent, vpToken }
@@ -492,7 +496,105 @@ app.get("/api/status", (_req, res) => {
     trustedSurface:   !!TRUSTED_SURFACE_URL,
     ap2SessionActive: !!_ap2Session,
     ap2HpAvailable:   !!TRUSTED_SURFACE_URL && !!PAYMENT_HANDLER_URL,
+    authSession:      _authSession ? { email: _authSession.email, profile: _authSession.profile, cards: _authSession.cards ?? [] } : null,
   });
+});
+
+// ── GET /api/config ──────────────────────────────────────────────────────────
+// フロントエンドに公開設定を返す（GOOGLE_CLIENT_ID など）
+
+app.get("/api/config", (_req, res) => {
+  res.json({ googleClientId: GOOGLE_CLIENT_ID ?? null });
+});
+
+// ── POST /api/auth/* ─────────────────────────────────────────────────────────
+// Payment Handler の Auth エンドポイントをプロキシし、セッションを保持する。
+
+async function proxyAuth(endpoint, req, res) {
+  if (!PAYMENT_HANDLER_URL) {
+    return res.status(503).json({ ok: false, error: "PAYMENT_HANDLER_URL が設定されていません" });
+  }
+  try {
+    const phRes = await fetch(`${PAYMENT_HANDLER_URL}${endpoint}`, {
+      method:  "POST",
+      headers: { "content-type": "application/json" },
+      body:    JSON.stringify(req.body ?? {}),
+    });
+    const data = await phRes.json();
+    if (phRes.ok && data.access_token) {
+      _authSession = {
+        email:       data.user?.email   ?? "",
+        userId:      data.user?.userId  ?? "",
+        profile:     data.user?.profile ?? {},
+        cards:       data.user?.cards   ?? [],
+        accessToken: data.access_token,
+      };
+      console.log(`[auth] session set email=${_authSession.email} cards=${_authSession.cards.length}`);
+    }
+    res.status(phRes.status).json({ ok: phRes.ok, ...data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+}
+
+app.post("/api/auth/signup", (req, res) => proxyAuth("/auth/signup", req, res));
+app.post("/api/auth/login",  (req, res) => proxyAuth("/auth/login",  req, res));
+app.post("/api/auth/google", (req, res) => proxyAuth("/auth/google", req, res));
+
+app.get("/api/auth/me", (_req, res) => {
+  if (!_authSession) return res.status(401).json({ ok: false, error: "ログインしていません" });
+  res.json({ ok: true, email: _authSession.email, userId: _authSession.userId, profile: _authSession.profile, cards: _authSession.cards ?? [] });
+});
+
+// カード追加
+app.post("/api/auth/cards", async (req, res) => {
+  if (!_authSession) return res.status(401).json({ ok: false, error: "ログインしていません" });
+  if (!PAYMENT_HANDLER_URL) return res.status(503).json({ ok: false, error: "PAYMENT_HANDLER_URL が設定されていません" });
+  try {
+    const phRes = await fetch(`${PAYMENT_HANDLER_URL}/auth/cards`, {
+      method:  "POST",
+      headers: { "content-type": "application/json", "authorization": `Bearer ${_authSession.accessToken}` },
+      body:    JSON.stringify(req.body ?? {}),
+    });
+    const data = await phRes.json();
+    if (phRes.ok && data.cards) {
+      _authSession.cards = data.cards;
+    }
+    res.status(phRes.status).json({ ok: phRes.ok, ...data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// カード削除
+app.delete("/api/auth/cards/:cardId", async (req, res) => {
+  if (!_authSession) return res.status(401).json({ ok: false, error: "ログインしていません" });
+  if (!PAYMENT_HANDLER_URL) return res.status(503).json({ ok: false, error: "PAYMENT_HANDLER_URL が設定されていません" });
+  try {
+    const phRes = await fetch(`${PAYMENT_HANDLER_URL}/auth/cards/${req.params.cardId}`, {
+      method:  "DELETE",
+      headers: { "authorization": `Bearer ${_authSession.accessToken}` },
+    });
+    const data = await phRes.json();
+    if (phRes.ok && data.cards) {
+      _authSession.cards = data.cards;
+    }
+    res.status(phRes.status).json({ ok: phRes.ok, ...data });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post("/api/auth/logout", async (_req, res) => {
+  if (_authSession && PAYMENT_HANDLER_URL) {
+    await fetch(`${PAYMENT_HANDLER_URL}/auth/logout`, {
+      method: "POST",
+      headers: { "authorization": `Bearer ${_authSession.accessToken}` },
+    }).catch(() => {});
+  }
+  _authSession = null;
+  console.log("[auth] session cleared");
+  res.json({ ok: true });
 });
 
 // ── POST /api/tokenize ───────────────────────────────────────────────────────

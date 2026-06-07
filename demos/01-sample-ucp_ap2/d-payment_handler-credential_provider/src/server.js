@@ -17,15 +17,219 @@
  */
 
 import { createServer } from "node:http";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, createHash, pbkdf2 } from "node:crypto";
+import { promisify } from "node:util";
+
+const pbkdf2Async = promisify(pbkdf2);
 
 const STRIPE_SECRET_KEY    = process.env.STRIPE_SECRET_KEY    ?? null;
 const PORT                 = parseInt(process.env.PAYMENT_HANDLER_PORT ?? "3200", 10);
 const TOKEN_TTL_MS         = 30 * 60 * 1000; // 30 分
+const AUTH_TOKEN_TTL_MS    = 24 * 60 * 60 * 1000; // 24 時間
 const TRUSTED_SURFACE_URL  = process.env.TRUSTED_SURFACE_URL?.replace(/\/$/, "") ?? null;
+const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID ?? null;
 
 // token → { paymentIntentId, checkoutId, expiresAt, isMock } または credential エントリ
 const tokenStore = new Map();
+
+// ─── ユーザーストア（in-memory） ────────────────────────────────────────────────
+// email → { userId, email, passwordHash, salt, profile, cards, createdAt }
+// cards: [{ cardId, last_four, brand, holder_name, exp_month, exp_year }]
+const userStore = new Map();
+// authToken → { userId, email, expiresAt }
+const authTokenStore = new Map();
+
+// カードブランド判定
+function detectBrand(digits) {
+  if (digits.startsWith("4")) return "visa";
+  if (/^5[1-5]/.test(digits) || /^2[2-7]/.test(digits)) return "mastercard";
+  if (/^3[47]/.test(digits)) return "amex";
+  if (/^6(?:011|5)/.test(digits)) return "discover";
+  return "unknown";
+}
+
+// カードエントリを構築（番号はマスク、last_four / brand のみ保存）
+function buildCardEntry({ card_number, exp_month, exp_year, holder_name }) {
+  const digits = String(card_number ?? "").replace(/\D/g, "");
+  if (digits.length < 4) return null;
+  return {
+    cardId:      randomBytes(8).toString("hex"),
+    last_four:   digits.slice(-4),
+    brand:       detectBrand(digits),
+    holder_name: (holder_name ?? "").trim(),
+    exp_month:   String(exp_month ?? "").padStart(2, "0"),
+    exp_year:    String(exp_year  ?? ""),
+  };
+}
+
+async function hashPassword(password, salt) {
+  const buf = await pbkdf2Async(password, salt, 100_000, 32, "sha256");
+  return buf.toString("hex");
+}
+
+function generateAuthToken() {
+  return `ph_tok_${randomBytes(24).toString("hex")}`;
+}
+
+function issueAuthToken(userId, email) {
+  const token = generateAuthToken();
+  const expiresAt = Date.now() + AUTH_TOKEN_TTL_MS;
+  authTokenStore.set(token, { userId, email, expiresAt });
+  return { token, expiresAt };
+}
+
+function verifyAuthToken(authHeader) {
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+  const entry = authTokenStore.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { authTokenStore.delete(token); return null; }
+  return entry;
+}
+
+// ─── Auth ハンドラ ──────────────────────────────────────────────────────────────
+
+async function handleSignup(body) {
+  const { email, password, profile = {}, card = null } = body;
+  if (!email || !password) return { status: 400, body: { error: "email と password は必須です" } };
+  if (userStore.has(email)) return { status: 409, body: { error: "このメールアドレスは既に登録されています" } };
+
+  const salt         = randomBytes(16).toString("hex");
+  const passwordHash = await hashPassword(password, salt);
+  const userId       = randomBytes(12).toString("hex");
+
+  const cards = [];
+  if (card) {
+    const entry = buildCardEntry(card);
+    if (entry) cards.push(entry);
+  }
+
+  userStore.set(email, { userId, email, passwordHash, salt, profile, cards, createdAt: Date.now() });
+
+  const { token, expiresAt } = issueAuthToken(userId, email);
+  console.log(`[auth/signup] user created email=${email} cards=${cards.length}`);
+  return {
+    status: 201,
+    body: { access_token: token, expires_at: new Date(expiresAt).toISOString(), user: { userId, email, profile, cards } },
+  };
+}
+
+async function handleLogin(body) {
+  const { email, password } = body;
+  if (!email || !password) return { status: 400, body: { error: "email と password は必須です" } };
+
+  const user = userStore.get(email);
+  if (!user) return { status: 401, body: { error: "メールアドレスまたはパスワードが正しくありません" } };
+
+  const hash = await hashPassword(password, user.salt);
+  if (hash !== user.passwordHash) return { status: 401, body: { error: "メールアドレスまたはパスワードが正しくありません" } };
+
+  const { token, expiresAt } = issueAuthToken(user.userId, email);
+  console.log(`[auth/login] user logged in email=${email}`);
+  return {
+    status: 200,
+    body: { access_token: token, expires_at: new Date(expiresAt).toISOString(), user: { userId: user.userId, email, profile: user.profile, cards: user.cards ?? [] } },
+  };
+}
+
+async function handleGoogleAuth(body) {
+  const { id_token } = body;
+  if (!id_token) return { status: 400, body: { error: "id_token は必須です" } };
+
+  // Google tokeninfo API でトークンを検証
+  let googlePayload;
+  try {
+    const url = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(id_token)}`;
+    const r = await fetch(url);
+    if (!r.ok) return { status: 401, body: { error: "Google トークンの検証に失敗しました" } };
+    googlePayload = await r.json();
+  } catch (e) {
+    return { status: 502, body: { error: "Google 認証サーバーへの接続に失敗しました", detail: e.message } };
+  }
+
+  if (GOOGLE_CLIENT_ID && googlePayload.aud !== GOOGLE_CLIENT_ID) {
+    return { status: 401, body: { error: "Google トークンの audience が一致しません" } };
+  }
+
+  const email = googlePayload.email;
+  if (!email) return { status: 401, body: { error: "Google アカウントのメールアドレスが取得できませんでした" } };
+
+  // 既存ユーザーを検索 or 新規作成
+  let user = userStore.get(email);
+  if (!user) {
+    const userId  = randomBytes(12).toString("hex");
+    const profile = {
+      first_name: googlePayload.given_name  ?? "",
+      last_name:  googlePayload.family_name ?? "",
+      picture:    googlePayload.picture     ?? "",
+    };
+    user = { userId, email, passwordHash: null, salt: null, profile, cards: [], createdAt: Date.now() };
+    userStore.set(email, user);
+    console.log(`[auth/google] new user created email=${email}`);
+  } else {
+    console.log(`[auth/google] existing user login email=${email}`);
+  }
+
+  const { token, expiresAt } = issueAuthToken(user.userId, email);
+  return {
+    status: 200,
+    body: {
+      access_token: token,
+      expires_at:   new Date(expiresAt).toISOString(),
+      user: { userId: user.userId, email, profile: user.profile, cards: user.cards ?? [] },
+      google_info: {
+        name:       googlePayload.name       ?? "",
+        given_name: googlePayload.given_name  ?? "",
+        family_name:googlePayload.family_name ?? "",
+        picture:    googlePayload.picture     ?? "",
+        email,
+      },
+    },
+  };
+}
+
+function handleMe(req) {
+  const entry = verifyAuthToken(req.headers.authorization);
+  if (!entry) return { status: 401, body: { error: "認証が必要です" } };
+  const user = userStore.get(entry.email);
+  if (!user) return { status: 404, body: { error: "ユーザーが見つかりません" } };
+  return { status: 200, body: { userId: user.userId, email: user.email, profile: user.profile, cards: user.cards ?? [] } };
+}
+
+function handleLogout(req) {
+  if (!req.headers.authorization?.startsWith("Bearer ")) return { status: 200, body: { ok: true } };
+  const token = req.headers.authorization.slice(7);
+  authTokenStore.delete(token);
+  return { status: 200, body: { ok: true } };
+}
+
+function handleAddCard(req, body) {
+  const entry = verifyAuthToken(req.headers.authorization);
+  if (!entry) return { status: 401, body: { error: "認証が必要です" } };
+  const user = userStore.get(entry.email);
+  if (!user) return { status: 404, body: { error: "ユーザーが見つかりません" } };
+
+  const cardEntry = buildCardEntry(body);
+  if (!cardEntry) return { status: 400, body: { error: "有効なカード番号が必要です" } };
+
+  if (!user.cards) user.cards = [];
+  user.cards.push(cardEntry);
+  console.log(`[auth/cards] card added cardId=${cardEntry.cardId} last_four=${cardEntry.last_four} email=${entry.email}`);
+  return { status: 201, body: { cards: user.cards } };
+}
+
+function handleDeleteCard(req, cardId) {
+  const entry = verifyAuthToken(req.headers.authorization);
+  if (!entry) return { status: 401, body: { error: "認証が必要です" } };
+  const user = userStore.get(entry.email);
+  if (!user) return { status: 404, body: { error: "ユーザーが見つかりません" } };
+
+  const before = (user.cards ?? []).length;
+  user.cards = (user.cards ?? []).filter(c => c.cardId !== cardId);
+  if (user.cards.length === before) return { status: 404, body: { error: "カードが見つかりません" } };
+  console.log(`[auth/cards] card deleted cardId=${cardId} email=${entry.email}`);
+  return { status: 200, body: { cards: user.cards } };
+}
 
 // ─── AP2 Credential Provider ────────────────────────────────────────────────────
 
@@ -686,6 +890,65 @@ const server = createServer(async (req, res) => {
     }
   }
 
+  // Auth エンドポイント
+  if (req.method === "POST" && pathname === "/auth/signup") {
+    try {
+      const body = await parseBody(req);
+      const result = await handleSignup(body);
+      return send(res, result.status, result.body);
+    } catch (e) {
+      return send(res, 500, { error: "internal_error", detail: e.message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/auth/login") {
+    try {
+      const body = await parseBody(req);
+      const result = await handleLogin(body);
+      return send(res, result.status, result.body);
+    } catch (e) {
+      return send(res, 500, { error: "internal_error", detail: e.message });
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/auth/google") {
+    try {
+      const body = await parseBody(req);
+      const result = await handleGoogleAuth(body);
+      return send(res, result.status, result.body);
+    } catch (e) {
+      return send(res, 500, { error: "internal_error", detail: e.message });
+    }
+  }
+
+  if (req.method === "GET" && pathname === "/auth/me") {
+    const result = handleMe(req);
+    return send(res, result.status, result.body);
+  }
+
+  if (req.method === "POST" && pathname === "/auth/logout") {
+    const result = handleLogout(req);
+    return send(res, result.status, result.body);
+  }
+
+  if (req.method === "POST" && pathname === "/auth/cards") {
+    try {
+      const body = await parseBody(req);
+      const result = handleAddCard(req, body);
+      return send(res, result.status, result.body);
+    } catch (e) {
+      return send(res, 500, { error: "internal_error", detail: e.message });
+    }
+  }
+
+  // DELETE /auth/cards/:cardId
+  if (req.method === "DELETE" && pathname.startsWith("/auth/cards/")) {
+    const cardId = pathname.slice("/auth/cards/".length);
+    if (!cardId) return send(res, 400, { error: "cardId は必須です" });
+    const result = handleDeleteCard(req, cardId);
+    return send(res, result.status, result.body);
+  }
+
   return send(res, 404, { error: "not_found" });
 });
 
@@ -695,4 +958,6 @@ server.listen(PORT, () => {
   console.log(`  Trusted Surface: ${TRUSTED_SURFACE_URL ?? "NOT configured — mandate verification skipped (mock)"}`);
   console.log(`  Endpoints (Payment Handler):    POST /tokenize  POST /detokenize  GET /health`);
   console.log(`  Endpoints (Credential Provider): POST /credential  POST /hp-credential  POST /credential/verify`);
+  console.log(`  Endpoints (Auth):                POST /auth/signup  POST /auth/login  POST /auth/google  GET /auth/me  POST /auth/logout`);
+  console.log(`  Google Client ID: ${GOOGLE_CLIENT_ID ?? "(未設定 — audience 検証スキップ)"}`);
 });

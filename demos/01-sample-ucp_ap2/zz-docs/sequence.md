@@ -9,6 +9,107 @@
 
 ---
 
+## 0. ユーザー認証フロー（サインアップ・ログイン・Google SSO）
+
+`c-ai-agent-app`（Platform）と `d-payment_handler-credential_provider` に追加した顧客認証機能のフロー。認証状態は Platform バックエンドの `_authSession`（メモリ内）に保持し、§3 の決済トークン発行時のカード情報ソースとして利用する。
+
+### 0-1. サインアップ（メール・パスワード＋オプションカード登録）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box rgb(240,248,255) 利用者・エージェント側
+        participant U  as ユーザー
+        participant FE as AIエージェント<br/>（フロントエンド）
+        participant BE as AIエージェント<br/>（バックエンド）
+    end
+    box rgb(230,255,230) 認証・決済基盤
+        participant PH as Payment Handler<br/>（d-payment_handler）
+    end
+
+    U->>FE: サインアップフォームに入力<br/>（名前・メール・パスワード・住所・任意カード）
+    FE->>BE: POST /api/auth/signup<br/>{ first_name, last_name, email, password,<br/>  shipping_address, card? }
+    BE->>PH: POST /auth/signup（同上）
+    Note over PH: PBKDF2（SHA-256・100,000 回）でパスワードをハッシュ化<br/>card が渡された場合は last_four・brand のみ保存<br/>（カード番号フルは保存しない）<br/>authToken を発行（24h TTL）
+    PH-->>BE: { userId, email, profile, cards, accessToken }
+    Note over BE: _authSession = { email, userId, profile,<br/>  cards, accessToken } をメモリに保持
+    BE-->>FE: 認証セッション情報
+    FE-->>U: ログイン済みバー表示・登録カード一覧を表示
+```
+
+### 0-2. ログイン（メール・パスワード）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box rgb(240,248,255) 利用者・エージェント側
+        participant U  as ユーザー
+        participant FE as AIエージェント<br/>（フロントエンド）
+        participant BE as AIエージェント<br/>（バックエンド）
+    end
+    box rgb(230,255,230) 認証・決済基盤
+        participant PH as Payment Handler<br/>（d-payment_handler）
+    end
+
+    U->>FE: メール・パスワードを入力
+    FE->>BE: POST /api/auth/login { email, password }
+    BE->>PH: POST /auth/login { email, password }
+    Note over PH: userStore から salt を取得し<br/>PBKDF2 ハッシュを検証<br/>一致したら authToken を発行（24h TTL）
+    PH-->>BE: { userId, email, profile, cards, accessToken }
+    Note over BE: _authSession を更新
+    BE-->>FE: 認証セッション情報
+    FE-->>U: ログイン済みバー表示
+```
+
+### 0-3. Google SSO（サインアップ・ログイン共通）
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box rgb(240,248,255) 利用者・エージェント側
+        participant U   as ユーザー
+        participant FE  as AIエージェント<br/>（フロントエンド）
+        participant BE  as AIエージェント<br/>（バックエンド）
+    end
+    box rgb(255,245,230) Google
+        participant GIS       as Google Identity Services
+        participant GTokenInfo as Google tokeninfo API
+    end
+    box rgb(230,255,230) 認証・決済基盤
+        participant PH as Payment Handler<br/>（d-payment_handler）
+    end
+
+    U->>FE: 「Google でサインイン」ボタンをクリック
+    FE->>GIS: google.accounts.id.prompt()
+    GIS-->>FE: id_token（JWT）
+    FE->>BE: POST /api/auth/google { id_token }
+    BE->>PH: POST /auth/google { id_token }
+    PH->>GTokenInfo: GET /tokeninfo?id_token={id_token}
+    GTokenInfo-->>PH: { sub, email, name, given_name, family_name, picture }
+    Note over PH: aud を GOOGLE_CLIENT_ID で検証<br/>userStore に未存在なら新規作成（upsert）<br/>authToken を発行（24h TTL）
+    PH-->>BE: { userId, email, profile, cards, accessToken }
+    Note over BE: _authSession を更新
+    BE-->>FE: 認証セッション情報
+    alt サインアップタブで SSO
+        FE-->>U: フォームへプロフィール情報を反映<br/>（名前・メールを自動入力）
+    else ログインタブで SSO
+        FE-->>U: ログイン済みバー表示
+    end
+```
+
+### 0-4. カード管理（ログイン後）
+
+ログイン後はカードの追加・削除が可能。カード番号はサーバーに保存されず、`last_four`（下4桁）と `brand` のみが `userStore` に記録される。`c-ai-agent-app` バックエンドは `_authSession.accessToken` を `Authorization: Bearer` ヘッダーに付与して `d-payment_handler` へプロキシする。
+
+| エンドポイント | 用途 |
+|---|---|
+| `POST /auth/cards` | カード追加（`card_number`, `exp_month`, `exp_year`, `holder_name`） |
+| `DELETE /auth/cards/:cardId` | カード登録済みカードの削除 |
+
+カード登録済みでログイン中の場合、§3 の決済トークン発行が自動化される（モーダル表示なし）。
+
+---
+
 ## 1. 具体シーケンス（商品検索・詳細閲覧、MCP 前提）
 
 アクターは Issue 指定どおり: **ユーザー**、**AIエージェントアプリ（フロントエンド）**、**AIエージェントアプリ（バックエンド）**、**既存ECサイト（MCP・単一endpoint）**、**既存ECサイト（既存バックエンド）**。以降の §1〜§3 で登場する MCP は **いずれも同一 endpoint**（冒頭の前提どおり）。
@@ -106,6 +207,8 @@ sequenceDiagram
 
 **決済トークン発行について**: UCP の Payment Handler（`com.google.pay` 等）との連携は **MCP の外**で行う。`create_checkout` のレスポンスに含まれる `payment_handlers` config を使い、Platform が Payment Handler を直接呼び出してトークン（`PaymentInstrument`）を取得する。取得したトークンを `complete_checkout` の `payment.instruments` に渡すことで決済が完結する（[payment-handler-guide.md](../../../references/specification/community/ucp/docs/specification/payment-handler-guide.md)、[tokenization-guide.md](../../../references/specification/community/ucp/docs/specification/tokenization-guide.md)）。
 
+**§0 との連携（自動トークナイズ）**: ユーザーがログイン済みかつカードを登録している場合、`create_checkout` ツール呼び出しを FE が検知した時点で自動的に `/tokenize` を呼び出す（モーダル表示なし）。未ログイン・カード未登録の場合は従来どおりカード情報入力モーダルを表示する（下図の `alt` 参照）。
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -141,14 +244,26 @@ sequenceDiagram
     BE->>MCP: get_checkout(meta, id)
     MCP-->>BE: 権威ある状態（表示・分岐用）
 
-    rect rgb(204,255,204)
-        Note over FE,Stripe: 【決済トークン発行】MCP外 — d-payment-handler + Stripe 連携
-        FE-->>BE: カード情報を入力（番号・有効期限・CVV）
+    alt ログイン中かつカード登録済み（自動トークナイズ）
+        Note over FE,PayHandler: 【決済トークン発行・自動】§0 で保持した _authSession.cards[0] を使用<br/>ユーザー操作なしで FE が自動実行
+        FE->>BE: POST /api/tokenize<br/>{ checkout_id, registered_card }
         BE->>PayHandler: POST /tokenize<br/>{ credential:{payment_method_id}, binding:{checkout_id}, amount, currency }
         PayHandler->>Stripe: paymentIntents.create<br/>{ amount, currency, payment_method, confirm:false }
         Stripe-->>PayHandler: PaymentIntent { id:"pi_xxx", status:"requires_confirmation" }
         PayHandler-->>BE: { token:"ucp_tok_xxx", expiry }
-        BE-->>FE: 決済トークン発行完了
+        BE-->>FE: { token:"ucp_tok_xxx", expiry }
+        FE-->>U: チャット入力に自動入力<br/>「決済トークンが発行されました（Visa ···· 4242）」
+    else カード未登録・未ログイン（手動モーダル）
+        Note over FE,Stripe: 【決済トークン発行・手動】カード情報入力モーダルを表示
+        FE-->>U: 決済モーダル表示（カード番号・有効期限・CVV）
+        U->>FE: カード情報を入力
+        FE->>BE: POST /api/tokenize<br/>{ checkout_id, card_info }
+        BE->>PayHandler: POST /tokenize<br/>{ credential:{payment_method_id}, binding:{checkout_id}, amount, currency }
+        PayHandler->>Stripe: paymentIntents.create<br/>{ amount, currency, payment_method, confirm:false }
+        Stripe-->>PayHandler: PaymentIntent { id:"pi_xxx", status:"requires_confirmation" }
+        PayHandler-->>BE: { token:"ucp_tok_xxx", expiry }
+        BE-->>FE: { token:"ucp_tok_xxx", expiry }
+        FE-->>U: チャット入力にトークンをペースト<br/>「決済トークンが発行されました（Visa ···· 4242）」
     end
 
     Note over BE,MCP: 完了/取消は meta.idempotency-key 必須（OpenRPC）

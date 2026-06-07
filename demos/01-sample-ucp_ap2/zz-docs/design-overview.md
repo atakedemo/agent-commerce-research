@@ -87,6 +87,58 @@ Agent は Payment Mandate チェーン（オープン + クローズド）を Cr
 
 詳細なシーケンスは [`sequence.md`](sequence.md) §8（AP2 HNP フロー）を参照。
 
+## Payment Handler 顧客管理と SSO
+
+`d-payment_handler-credential_provider` は従来の決済トークン発行に加え、顧客アカウント管理機能を備える。
+
+### ユーザーストア（in-memory）
+
+| フィールド | 説明 |
+|---|---|
+| `userId` | ランダム生成の識別子 |
+| `email` | ログイン ID |
+| `passwordHash` | PBKDF2 (SHA-256, 10 万回) |
+| `profile` | `first_name`, `last_name`, `phone`, `postal`, `country`, `address1`, `city`, `province` |
+
+認証トークン（`ph_tok_*`）は 24 時間有効。サーバー再起動でデータはリセット（開発用）。
+
+### Auth エンドポイント（`d-payment_handler-credential_provider`）
+
+| メソッド | パス | 説明 |
+|---|---|---|
+| `POST` | `/auth/signup` | 新規登録（email + password + profile） |
+| `POST` | `/auth/login` | ログイン（email + password） |
+| `POST` | `/auth/google` | Google SSO（id_token を tokeninfo API で検証） |
+| `GET`  | `/auth/me` | ログイン中ユーザー情報（`Authorization: Bearer <token>`） |
+| `POST` | `/auth/logout` | トークン失効 |
+
+### AI エージェントセッション（`c-ai-agent-app`）
+
+`c-ai-agent-app` は `/api/auth/*` で上記エンドポイントをプロキシし、取得した `access_token` を `_authSession` に in-memory 保持する。`/api/status` の `authSession` フィールドで現在のセッション状態を取得できる。
+
+### Google SSO フロー
+
+1. ユーザーが「Google でログイン / サインアップ」ボタンをクリック
+2. Google Identity Services (GIS) の `prompt()` が Google アカウント選択 UI を表示
+3. GIS コールバックで取得した `id_token` を `/api/auth/google` に送信
+4. サーバーが `https://oauth2.googleapis.com/tokeninfo?id_token=...` で検証
+5. ログイン成功: 既存ユーザーまたは新規作成でセッション確立
+6. サインアップ時: Google アカウントの `given_name` / `family_name` / `email` をフォームにプリセット
+
+### UCPフロー UI 認証メニュー
+
+`c-ai-agent-app` の「UCPフロー」サブタブに以下を追加：
+
+- **ログイン済みバー**: メール・氏名・ログアウトボタン
+- **ログインタブ**: Google SSO ボタン + email/password フォーム
+- **サインアップタブ**: Google SSO（フォームプリセット）+ フルフォーム（配送先住所を含む）
+
+ログイン成功後、`profile` がブラウザの `PROFILE_KEY` ローカルストレージ（購入者情報）に自動マージされ、AI エージェントが配送先として使用する。
+
+環境変数:
+- `GOOGLE_CLIENT_ID`: Google Cloud Console で取得するクライアント ID（両サーバーで同一の値を設定）
+- 未設定時は Google SSO 非対応で動作、`audience` 検証もスキップ
+
 ## 処理の流れ（UCP／MCP 観点の要約）
 
 [`sequence.md`](sequence.md) と整合させた抽象は次のとおり。
