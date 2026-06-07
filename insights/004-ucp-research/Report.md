@@ -909,6 +909,274 @@ stateDiagram-v2
 | **Tokenizer の位置**      | Shopify が Tokenizer を兼ねる                             | PSP が PAYMENT_GATEWAY Tokenizer を担う                  |
 | **PCI DSS スコープ**      | Shopify が処理（Business の PCI スコープ最小）            | PAYMENT_GATEWAY では PSP のみが復号（Business は最小）   |
 
+## 追加調査（2026-06-04）
+
+参照元: [Issue #5 コメント（2026-06-04）](https://github.com/atakedemo/agent-commerce-research/issues/5#issuecomment-4621994985)
+
+### AI（Platform）と Business の間の認証認可の仕組み
+
+#### 全体アーキテクチャ
+
+UCP の認証認可は「**誰が誰であるかの証明（認証）**」と「**その主体が何をしてよいかの判断（認可）**」を 2 層で分離している。Payment Handler の文脈では、Platform が Business へ credential を提出するまでに以下の経路を辿る。
+
+```
+Platform                         Business
+────────                         ────────
+UCP-Agent: profile=...  ──────►  Platform profile を fetch
+HTTP Signature          ──────►  signing_keys[] で署名検証（認証）
+Bearer access_token     ──────►  PaymentIdentity として識別（認可）
+instrument 提出         ──────►  handler_id / binding 検証
+```
+
+---
+
+#### 1. Platform → Business の認証：UCP-Agent ヘッダー ＋ HTTP Message Signatures
+
+Platform はすべてのリクエストに `UCP-Agent` ヘッダーで自身のプロファイル URI を宣言する。Business はそのプロファイルを取得し、`signing_keys[]` 内の公開鍵でリクエスト署名を検証する。
+
+```http
+POST /checkout-sessions HTTP/1.1
+UCP-Agent: profile="https://agent.example/profiles/shopping-agent.json"
+Signature-Input: sig1=("@method" "@path" "content-type");keyid="platform_2025";alg="ecdsa-p256-sha256"
+Signature: sig1=:MEYCIQDhqn...==:
+Content-Type: application/json
+```
+
+**Platform プロファイルの署名鍵宣言:**
+
+```json
+{
+  "ucp": { ... },
+  "signing_keys": [
+    {
+      "kid": "platform_2025",
+      "kty": "EC",
+      "crv": "P-256",
+      "x": "MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4",
+      "y": "4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM",
+      "use": "sig",
+      "alg": "ES256"
+    }
+  ]
+}
+```
+
+`UCP-Agent` ヘッダーの Identity と認証された主体は必ず一致していなければならない（`overview.md` §Authentication）。API Key / OAuth / mTLS を使う場合も同じ制約が課される。
+
+**サポートされる認証メカニズム:**
+
+| メカニズム | 説明 | 用途 |
+|---|---|---|
+| HTTP Message Signatures（RFC 9421）| **推奨**。Profile の公開鍵で検証 | 事前登録なしの Permissionless Onboarding |
+| OAuth 2.0 | client_id + client_secret → Bearer token | Identity Linking での認可フロー |
+| API Key | 事前共有秘密（帯域外） | 既存の信頼関係がある場合 |
+| mTLS | クライアント証明書による相互認証 | 高セキュリティ環境 |
+
+---
+
+#### 2. Business が Platform を認可する：Identity Linking（OAuth 2.0）
+
+Platform が Business の保護されたリソースにアクセスするには、**OAuth 2.0 Authorization Code Flow**（Identity Linking）で `access_token` を取得する。
+
+```
+1. Platform → Business: GET /.well-known/ucp
+                        (supported_mechanisms: ["oauth2"] を確認)
+
+2. Platform → Business: authorization_endpoint へリダイレクト
+                        client_id, scope, state パラメータ付き
+
+3. Buyer → Business:   認可画面で承認
+
+4. Platform → Business: token_endpoint へ code 送信
+                        Authorization: Basic {client_id:client_secret の Base64}
+
+5. Business → Platform: { access_token, token_type: "Bearer", ... }
+
+6. Platform → Business: 以降の API 呼び出しに Authorization: Bearer <access_token>
+```
+
+**Business 側の `.well-known/ucp` での mechanism 宣言例:**
+
+```json
+{
+  "identity_linking": {
+    "supported_mechanisms": [
+      {
+        "type": "oauth2",
+        "issuer": "https://merchant.example.com",
+        "authorization_endpoint": "https://merchant.example.com/oauth2/authorize",
+        "token_endpoint": "https://merchant.example.com/oauth2/token",
+        "scopes_supported": ["ucp:scopes:checkout_session"],
+        "grant_types_supported": ["authorization_code", "refresh_token"]
+      }
+    ]
+  }
+}
+```
+
+---
+
+#### 3. Shop Pay Handler の認証認可（固有部分）
+
+Shop Pay は、**Platform（AI エージェント）と Business（Merchant）の双方が事前に Shopify に登録**していることを前提とする。
+
+| 参加者 | 取得するもの | 登録方法 |
+|---|---|---|
+| **Platform** | `client_id`（Shop Pay が発行する Platform 識別子） | 現在セルフサーブ未開放。UCP discussions forum でアクセスを申請 |
+| **Business（Shopify ストア）** | `shop_id`（`shopify-XXXXXXXX` 形式） | Shopify マーチャントは自動。外部マーチャントは事前登録必要 |
+
+**Platform のハンドラ設定（`/.well-known/ucp` または Profile 内）:**
+
+```json
+{
+  "dev.shopify.shop_pay": [
+    {
+      "id": "shop_pay_agent",
+      "version": "2026-01-23",
+      "config": {
+        "client_id": "shop-client-4578576128"
+      }
+    }
+  ]
+}
+```
+
+**Business の宣言（`/.well-known/ucp`）:**
+
+```json
+{
+  "payment_handlers": {
+    "dev.shopify.shop_pay": [
+      {
+        "id": "shop_pay",
+        "version": "2026-01-23",
+        "spec": "https://shopify.dev/ucp/shop-pay-handler/2026-01-23/spec.md",
+        "config": { "shop_id": "shopify-559128571" }
+      }
+    ]
+  }
+}
+```
+
+**委譲支払いフロー（Platform 側の操作手順）:**
+
+```
+1. Business の payment_handlers から dev.shopify.shop_pay を発見
+2. Merchant の shop_id と Agent の client_id を使って
+   委譲支払いコンテキストを初期化（Shop Pay SDK 呼び出し）
+3. 合計・配送・品目・通貨・ロケールを含む支払いリクエストを構築
+4. Shop Pay UI を Buyer に提示 → Buyer が認証・承認
+5. Shop Pay が shop_token を返却
+6. POST /checkout-sessions/{id}/complete に instrument として提出
+```
+
+**shop_token のセキュリティ特性:**
+
+| 特性 | 内容 |
+|---|---|
+| 使用回数 | 単一使用（detokenize 後に失効） |
+| 有効期間 | 限定的（生成後迅速に使用が必要） |
+| スコープ | 特定 checkout セッションにバインド |
+| 用途 | Platform → Business への credential として提出 |
+
+**Business 側の instrument 検証（`/complete` 受信時）:**
+
+```
+1. handler_id が宣言済みの shop_pay ハンドラと一致するか確認
+2. type = "shop_pay"、credential.type = "shop_token" を確認
+3. credential.token を Shop Pay 決済処理 API へ送信
+4. billing_address の必須フィールドを確認
+```
+
+---
+
+#### 4. Tokenization における認証
+
+Tokenizer（カード番号などの生 credential を受け取りトークンを返す主体）は `binding` フィールドで Business と Transaction を識別する。
+
+**`/tokenize` リクエスト（Platform → Tokenizer）:**
+
+```json
+POST /tokenize
+Content-Type: application/json
+
+{
+  "credential": {
+    "type": "card",
+    "pan": "4111111111111111",
+    "expiry": "12/2028",
+    "cvv": "123"
+  },
+  "binding": {
+    "checkout_id": "co_abc123",
+    "identity": {
+      "access_token": "merchant_001"
+    }
+  }
+}
+```
+
+- `binding.checkout_id`：特定の checkout セッションに token を紐付け
+- `binding.identity.access_token`：Business を識別（リプレイ攻撃防止）
+
+**`/detokenize` リクエスト（Business/PSP → Tokenizer）:**
+
+```json
+POST /detokenize
+Authorization: Bearer {caller_access_token}
+Content-Type: application/json
+
+{
+  "token": "tok_abc123xyz789",
+  "binding": {
+    "checkout_id": "co_abc123"
+  }
+}
+```
+
+- `Authorization: Bearer` で Caller（Business または PSP）を認証
+- `binding` が一致しない場合は Tokenizer が拒否
+- `binding.identity` を省略した場合：Caller 自身が binding target
+- 別の参加者として行動する場合（PSP が Business のために detokenize）は `identity` を明示
+
+**Token セキュリティ要件（`tokenization-guide.md` より）:**
+
+| 要件 | 詳細 |
+|---|---|
+| エントロピー | 128 bits 以上 |
+| 非可逆性 | Token から生 credential を導出不可 |
+| スコープ限定 | Tokenizer のみで有効（Business は生データを持たない） |
+| 時間制限 | `expiry` フィールド必須。通常 5〜30 分 |
+| 単一使用推奨 | Detokenize 後に失効させるのが最もセキュア |
+
+---
+
+#### まとめ：認証認可レイヤー全体
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Layer 1: Transport 認証                                         │
+│  Platform → Business                                             │
+│  UCP-Agent ヘッダー + HTTP Message Signatures (RFC 9421)         │
+│  Business が Platform profile の signing_keys[] で検証           │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 2: Identity Linking（認可）                               │
+│  OAuth 2.0 Authorization Code Flow                               │
+│  Platform が access_token を取得 → PaymentIdentity として識別    │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 3: Payment Handler 固有（Shop Pay の例）                  │
+│  Platform: client_id（Shopify 事前登録）                         │
+│  Business: shop_id（Shopify 自動または事前登録）                  │
+│  shop_token: 単一使用・スコープ付き・時間制限あり                 │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 4: Tokenization（credential 保護）                        │
+│  binding = { checkout_id + identity.access_token }               │
+│  Tokenizer が binding 一致を検証してリプレイ攻撃を防止            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## 未解決事項・不足情報
 
 - Issue 本文の見出し「AP2」とタイトル「UCP」のどちらを主スコープとするか、記載上未解決である。
@@ -941,8 +1209,9 @@ stateDiagram-v2
 - 外部: [agent-commerce-research Issue #5](https://github.com/atakedemo/agent-commerce-research/issues/5)、[Issue #5 コメント（起票者整理・2026-04-29）](https://github.com/atakedemo/agent-commerce-research/issues/5#issuecomment-4341120745)、[Issue #5 コメント（追加調査・2026-05-10）](https://github.com/atakedemo/agent-commerce-research/issues/5#issuecomment-4411617760)
 - 外部: [UCP Release v2026-04-08](https://github.com/Universal-Commerce-Protocol/ucp/releases/tag/v2026-04-08)
 - 外部: 起票者の所属 — [GitHub REST `GET /users/{username}](https://docs.github.com/en/rest/users/users#get-a-user)`（各 `login` について、Issue／PR 共通で 2026-04-29 取得）
-- 外部: [Shopify - Shop Pay Handler](https://shopify.dev/docs/agents/carts-and-checkout/shop-pay-handler)（2026-05-10 取得）
+- 外部: [Shopify - Shop Pay Handler](https://shopify.dev/docs/agents/carts-and-checkout/shop-pay-handler)（2026-05-10、2026-06-04 取得）
 - 外部: [Google - Google Pay Payment Handler](https://developers.google.com/merchant/ucp/guides/google-pay-payment-handler)（2026-05-10 取得）
+- 外部: [Issue #5 コメント（認証認可追加調査・2026-06-04）](https://github.com/atakedemo/agent-commerce-research/issues/5#issuecomment-4621994985)
 
 ## 主要ファクト
 
@@ -968,4 +1237,8 @@ stateDiagram-v2
 - `dev.shopify.shop_pay` は Shopify が Tokenizer を兼ね、Platform は `shop_token`（single-use）を取得して checkout に提出する。Platform の `client_id` 登録は現在セルフサーブ未開放（2026-05-10 時点）。
 - `com.google.pay` は PAYMENT_GATEWAY トークナイズが標準で、PSP のみが復号可能な暗号化トークンを返す。DIRECT トークナイズは Business が raw カードデータを受け取るため PCI DSS スコープが拡大し非推奨。
 - 服の EC 購入を想定したシーケンス図・ER 図・状態遷移図を本レポートの追加調査セクションに Mermaid 形式で記載した（2026-05-10）。
+- Platform は `UCP-Agent` ヘッダーでプロファイル URI を宣言し、HTTP Message Signatures (RFC 9421) でリクエストに署名する。Business は Platform profile の `signing_keys[]` に含まれる公開鍵で署名を検証することで Platform を認証する（`overview.md` §Authentication、2026-06-04）。
+- Identity Linking（`identity-linking.md`）では OAuth 2.0 Authorization Code Flow を推奨主機構として、Platform は `client_id` + `client_secret` で token_endpoint に認証し `access_token` を取得する。以降の API 呼び出しは `Authorization: Bearer <access_token>` で認可される（2026-06-04）。
+- `dev.shopify.shop_pay` では Platform 側に `client_id`（Shopify 発行・現在セルフサーブ未開放）、Business 側に `shop_id` が必要。shop_token は単一使用・時間制限・checkout スコープ付きで、Platform が `/complete` 時に instrument として提出する（Shopify Shop Pay Handler ドキュメント・2026-06-04）。
+- Tokenization では `/tokenize` リクエストの `binding = { checkout_id, identity.access_token }` で Business と Transaction を紐付け、`/detokenize` では `Authorization: Bearer` + binding 一致検証でリプレイ攻撃を防止する（`tokenization-guide.md`、2026-06-04）。
 
