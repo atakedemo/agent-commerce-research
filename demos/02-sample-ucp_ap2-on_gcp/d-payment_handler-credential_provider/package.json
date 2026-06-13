@@ -1,0 +1,16 @@
+{
+  "name": "@ucp-research/payment-handler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "UCP Payment Handler — Stripe tokenizer (POST /tokenize, POST /detokenize)",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "stripe": "^17.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,3477 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UCP Shopping Agent Demo</title>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #f4f6f8;
+      --surface: #ffffff;
+      --primary: #1a1a2e;
+      --accent:  #4f7ef8;
+      --green:   #2e9e5b;
+      --red:     #d93025;
+      --border:  #e0e0e0;
+      --text:    #333;
+      --muted:   #777;
+      --code-bg: #1e1e2e;
+    }
+
+    body {
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 1rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+    header p  { font-size: 0.75rem; opacity: 0.65; margin-top: 2px; }
+    .badge {
+      margin-left: auto;
+      font-size: 0.7rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.15);
+      white-space: nowrap;
+    }
+    .badge.on  { background: rgba(46,158,91,0.8); }
+    .badge.off { background: rgba(217,48,37,0.6); }
+
+    /* ── Layout ── */
+    main { max-width: 860px; margin: 2rem auto; padding: 0 1rem 4rem; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; gap: 0.375rem; margin-bottom: 1.5rem; }
+    .tab-btn {
+      padding: 0.45rem 1.25rem;
+      border: 2px solid var(--primary);
+      background: var(--surface);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab-btn.active { background: var(--primary); color: #fff; }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Demo tab ── */
+    .demo-desc { color: var(--muted); font-size: 0.875rem; margin-bottom: 1.25rem; line-height: 1.6; }
+
+    .flow-diagram {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      flex-wrap: wrap;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.25rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .flow-diagram .node {
+      padding: 0.25rem 0.6rem;
+      background: var(--bg);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .flow-diagram .arrow { color: var(--border); font-size: 1rem; }
+
+    .run-btn {
+      background: var(--green);
+      color: #fff;
+      border: none;
+      padding: 0.65rem 2rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Step cards ── */
+    .steps { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
+
+    .step-card {
+      background: var(--surface);
+      border-radius: 8px;
+      border-left: 4px solid var(--green);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      overflow: hidden;
+    }
+    .step-card.fail { border-left-color: var(--red); }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.65rem 1rem;
+      cursor: pointer;
+      user-select: none;
+    }
+    .step-icon { font-size: 1.1rem; }
+    .step-name { flex: 1; font-size: 0.875rem; font-weight: 600; }
+    .step-tool {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-family: monospace;
+    }
+    .step-toggle { color: var(--muted); font-size: 0.8rem; transition: transform 0.2s; }
+    .step-toggle.open { transform: rotate(180deg); }
+
+    .step-body {
+      border-top: 1px solid var(--border);
+      padding: 0.6rem 1rem;
+      display: none;
+    }
+    .step-body pre {
+      background: var(--code-bg);
+      color: #cdd6f4;
+      padding: 0.75rem;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      overflow-x: auto;
+      max-height: 220px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    /* ── Chat tab ── */
+    .chat-notice {
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 8px;
+      padding: 1.5rem 2rem;
+      text-align: center;
+      color: #5a4000;
+    }
+    .chat-notice h3 { margin-bottom: 0.5rem; }
+    .chat-notice code {
+      background: rgba(0,0,0,0.08);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .chat-notice p { font-size: 0.875rem; line-height: 1.6; }
+
+    .chat-wrap {
+      background: var(--surface);
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      display: flex;
+      flex-direction: column;
+      height: 520px;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .msg { display: flex; flex-direction: column; max-width: 78%; }
+    .msg.user  { align-self: flex-end; align-items: flex-end; }
+    .msg.bot   { align-self: flex-start; }
+    .msg.sys   { align-self: center; max-width: 100%; }
+
+    .msg .bubble {
+      padding: 0.55rem 0.9rem;
+      border-radius: 14px;
+      font-size: 0.875rem;
+      line-height: 1.55;
+    }
+    .msg.user .bubble { background: var(--primary); color: #fff; border-radius: 14px 14px 2px 14px; }
+    .msg.bot  .bubble { background: var(--bg); border: 1px solid var(--border); border-radius: 14px 14px 14px 2px; }
+    .msg.sys  .bubble { background: #fff3cd; color: #856404; font-size: 0.8rem; border-radius: 8px; text-align: center; }
+
+    .msg .tool-log {
+      margin-top: 0.25rem;
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .chat-input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 0.5rem;
+      padding: 0.75rem;
+      border-top: 1px solid var(--border);
+    }
+    .chat-input-row textarea {
+      flex: 1;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-family: inherit;
+      outline: none;
+      resize: none;
+      line-height: 1.5;
+      min-height: 2.25rem;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+    .chat-input-row textarea:focus { border-color: var(--accent); }
+    .chat-input-row textarea:disabled { background: var(--bg); }
+    .send-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.55rem 1.1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .chat-hint {
+      margin-top: 0.75rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .chip {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      cursor: pointer;
+      margin: 0.2rem;
+      font-size: 0.75rem;
+      transition: background 0.15s;
+    }
+    .chip:hover { background: var(--bg); }
+
+    /* ── Payment Modal ── */
+    #payment-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .payment-modal {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.75rem;
+      max-width: 400px;
+      width: calc(100% - 2rem);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+    .modal-header h3 { font-size: 1rem; font-weight: 700; }
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 0.2rem 0.4rem;
+      line-height: 1;
+      border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+    .modal-desc {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      line-height: 1.6;
+    }
+    .modal-send-btn {
+      display: block;
+      width: 100%;
+      margin-top: 1rem;
+      background: var(--green);
+      color: #fff;
+      border: none;
+      padding: 0.65rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .modal-send-btn:hover { opacity: 0.88; }
+
+    /* ── DC API Modal（委任フロー） ── */
+    .dcql-modal {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.5rem;
+      max-width: 560px;
+      width: calc(100% - 2rem);
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.28);
+    }
+    .dcql-modal-body {
+      flex: 1;
+      overflow-y: auto;
+      margin: 0.75rem 0;
+    }
+    .dcql-modal pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      font-size: 0.78rem;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 0;
+    }
+    .dcql-modal-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+    .dcql-modal-actions {
+      display: flex;
+      gap: 0.6rem;
+      margin-top: 0.75rem;
+    }
+    .dcql-modal-actions button {
+      flex: 1;
+      padding: 0.6rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s;
+    }
+    .dcql-modal-actions button { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .dcql-modal-actions button:hover { opacity: 0.85; }
+
+    /* ── Payment Handler badge ── */
+    .ph-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.7rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+      font-weight: 500;
+    }
+    .ph-badge.on  { background: rgba(46,158,91,0.12); color: #1a6b3a; border: 1px solid rgba(46,158,91,0.3); }
+    .ph-badge.off { background: rgba(120,120,120,0.08); color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Card form ── */
+    .card-form-section {
+      margin-top: 2rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    .card-form-section h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .card-form-section .sub-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      line-height: 1.6;
+    }
+    .card-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .form-row { display: flex; gap: 1rem; }
+    .form-group { display: flex; flex-direction: column; gap: 0.35rem; flex: 1; min-width: 0; }
+    .form-group label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .form-group input {
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-family: "Courier New", monospace;
+      outline: none;
+      transition: border-color 0.15s;
+      background: var(--bg);
+    }
+    .form-group input:focus { border-color: var(--accent); background: #fff; }
+    .tokenize-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.65rem 1.75rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      align-self: flex-start;
+    }
+    .tokenize-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .token-result {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      display: none;
+    }
+    .token-result.ok  { background: rgba(46,158,91,0.08); border: 1px solid rgba(46,158,91,0.25); color: #1a6b3a; }
+    .token-result.err { background: rgba(217,48,37,0.08); border: 1px solid rgba(217,48,37,0.25); color: var(--red); }
+    .token-result code {
+      display: block;
+      margin-top: 0.4rem;
+      font-family: monospace;
+      font-size: 0.78rem;
+      word-break: break-all;
+      background: rgba(0,0,0,0.05);
+      padding: 0.3rem 0.5rem;
+      border-radius: 4px;
+    }
+
+    /* ── Chat Sub-tabs ── */
+    .sub-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--border);
+    }
+    .sub-tab-btn {
+      padding: 0.45rem 1.1rem;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      cursor: pointer;
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: var(--muted);
+      transition: color 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .sub-tab-btn:hover { color: var(--text); }
+    .sub-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .sub-tab-pane { display: none; }
+    .sub-tab-pane.active { display: block; }
+
+    /* ── AP2 Panel ── */
+    .ap2-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .ap2-panel-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.6rem;
+    }
+    .ap2-panel-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+    .ap2-session-badge {
+      font-size: 0.72rem;
+      padding: 0.2rem 0.65rem;
+      border-radius: 999px;
+      font-weight: 600;
+    }
+    .ap2-session-badge.active {
+      background: rgba(46,158,91,0.12);
+      color: #1a6b3a;
+      border: 1px solid rgba(46,158,91,0.3);
+    }
+    .ap2-session-badge.inactive {
+      background: rgba(120,120,120,0.08);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .ap2-panel-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+    .ap2-intent-form { display: flex; flex-direction: column; gap: 0.75rem; }
+    .ap2-intent-form .form-row { display: flex; gap: 0.75rem; }
+    .ap2-intent-form select {
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-family: inherit;
+      outline: none;
+      background: var(--bg);
+      width: 100%;
+    }
+    .ap2-init-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.55rem 1.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      align-self: flex-start;
+    }
+    .ap2-init-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .cmwallet-notice {
+      background: #fffbea;
+      border: 1px solid #f0d060;
+      border-radius: 6px;
+      padding: 0.55rem 0.75rem;
+      font-size: 0.78rem;
+      color: #7a5a00;
+      line-height: 1.55;
+      margin-bottom: 0.6rem;
+    }
+    .ap2-init-result {
+      margin-top: 0.75rem;
+      padding: 0.65rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      display: none;
+    }
+    .ap2-init-result.ok  { background: rgba(46,158,91,0.08); border: 1px solid rgba(46,158,91,0.25); color: #1a6b3a; }
+    .ap2-init-result.err { background: rgba(217,48,37,0.08); border: 1px solid rgba(217,48,37,0.25); color: var(--red); }
+
+    /* AP2 credential badge in chat */
+    .ap2-cred-log {
+      margin-top: 0.25rem;
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      background: rgba(79,126,248,0.08);
+      border: 1px solid rgba(79,126,248,0.2);
+      border-radius: 4px;
+      color: var(--accent);
+      font-style: normal;
+    }
+    /* Tool call error detail block */
+    .tool-err-block {
+      margin-top: 0.25rem;
+      font-size: 0.7rem;
+      padding: 0.3rem 0.5rem;
+      background: rgba(217,48,37,0.07);
+      border: 1px solid rgba(217,48,37,0.25);
+      border-radius: 4px;
+      color: var(--red);
+      font-family: monospace;
+      word-break: break-all;
+      white-space: pre-wrap;
+    }
+    .tool-err-block strong { font-weight: 600; }
+
+    /* ── Mandate display ── */
+    .mandate-block {
+      margin-top: 0.4rem;
+      border: 1px solid rgba(79,126,248,0.25);
+      border-radius: 6px;
+      overflow: hidden;
+      font-size: 0.72rem;
+    }
+    .mandate-block summary {
+      padding: 0.35rem 0.6rem;
+      background: rgba(79,126,248,0.07);
+      cursor: pointer;
+      user-select: none;
+      font-weight: 600;
+      color: var(--accent);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .mandate-block summary::-webkit-details-marker { display: none; }
+    .mandate-section {
+      padding: 0.45rem 0.6rem;
+      border-top: 1px solid rgba(79,126,248,0.12);
+    }
+    .mandate-section-title {
+      font-size: 0.65rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.25rem;
+    }
+    .mandate-jwt {
+      font-family: monospace;
+      font-size: 0.62rem;
+      word-break: break-all;
+      background: var(--code-bg);
+      color: #cdd6f4;
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      max-height: 64px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .mandate-payload {
+      font-family: monospace;
+      font-size: 0.62rem;
+      background: #f6f8ff;
+      border: 1px solid rgba(79,126,248,0.12);
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+      max-height: 110px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #333;
+      margin-top: 0.2rem;
+    }
+
+    .copy-btn {
+      display: inline-block;
+      margin-top: 0.25rem;
+      padding: 0.12rem 0.4rem;
+      font-size: 0.6rem;
+      background: rgba(79,126,248,0.1);
+      border: 1px solid rgba(79,126,248,0.25);
+      border-radius: 3px;
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+    .copy-btn:hover { background: rgba(79,126,248,0.22); }
+
+    /* ── Chat toolbar ── */
+    .chat-toolbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 0.5rem;
+    }
+    .settings-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.35rem 0.75rem;
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: background 0.15s, color 0.15s;
+    }
+    .settings-btn:hover { background: var(--bg); color: var(--text); }
+    .profile-set-badge { font-size: 0.7rem; color: var(--green); margin-left: 0.2rem; }
+
+    /* ── Settings modal ── */
+    .settings-modal {
+      background: var(--surface);
+      border-radius: 12px;
+      padding: 1.75rem;
+      max-width: 500px;
+      width: calc(100% - 2rem);
+      max-height: calc(100vh - 4rem);
+      overflow-y: auto;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.25);
+    }
+    .settings-section-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 1.1rem 0 0.6rem;
+      padding-bottom: 0.25rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .settings-save-btn {
+      display: block;
+      width: 100%;
+      margin-top: 1.25rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.65rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .settings-save-btn:hover { opacity: 0.88; }
+    .settings-form-row { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
+    .settings-form-row .form-group { margin-top: 0; }
+    .settings-form-group { margin-top: 0.75rem; }
+
+    /* ── Auth Panel ── */
+    .auth-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+    }
+    .auth-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 1rem; }
+    .auth-tab-btn {
+      padding: 0.4rem 1rem;
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--muted);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .auth-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .auth-tab-pane { display: none; }
+    .auth-tab-pane.active { display: block; }
+
+    .auth-form { display: flex; flex-direction: column; gap: 0.75rem; }
+    .auth-form .form-group input { background: var(--bg); }
+    .auth-submit-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.6rem 1.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      width: 100%;
+      margin-top: 0.25rem;
+    }
+    .auth-submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .auth-submit-btn:hover:not(:disabled) { opacity: 0.88; }
+
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+      margin: 0.5rem 0;
+    }
+    .auth-divider::before, .auth-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .google-signin-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.55rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .google-signin-btn:hover { background: var(--bg); }
+    .google-signin-btn svg { width: 18px; height: 18px; }
+
+    .auth-result {
+      margin-top: 0.5rem;
+      padding: 0.55rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      display: none;
+    }
+    .auth-result.ok  { background: rgba(46,158,91,0.08); border: 1px solid rgba(46,158,91,0.25); color: #1a6b3a; }
+    .auth-result.err { background: rgba(217,48,37,0.08); border: 1px solid rgba(217,48,37,0.25); color: var(--red); }
+
+    .logged-in-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: rgba(46,158,91,0.07);
+      border: 1px solid rgba(46,158,91,0.25);
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.82rem;
+    }
+    .logged-in-bar .user-icon { font-size: 1.2rem; }
+    .logged-in-bar .user-info { flex: 1; }
+    .logged-in-bar .user-email { font-weight: 600; color: #1a6b3a; }
+    .logged-in-bar .user-name  { color: var(--muted); font-size: 0.75rem; }
+    .logout-btn {
+      background: none;
+      border: 1px solid rgba(46,158,91,0.4);
+      border-radius: 5px;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      color: #1a6b3a;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+    .logout-btn:hover { background: rgba(46,158,91,0.1); }
+
+    /* ── Registered Card ── */
+    .card-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; }
+    .card-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      font-size: 0.82rem;
+    }
+    .card-item .card-brand-icon { font-size: 1.2rem; }
+    .card-item .card-info { flex: 1; }
+    .card-item .card-number-text { font-weight: 600; font-family: monospace; }
+    .card-item .card-expiry-text { font-size: 0.72rem; color: var(--muted); }
+    .card-delete-btn {
+      background: none;
+      border: 1px solid rgba(217,48,37,0.3);
+      border-radius: 4px;
+      padding: 0.15rem 0.5rem;
+      font-size: 0.7rem;
+      color: var(--red);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .card-delete-btn:hover { background: rgba(217,48,37,0.07); }
+    .card-add-section { margin-top: 0.75rem; }
+    .card-add-toggle {
+      background: none;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      width: 100%;
+      padding: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .card-add-toggle:hover { border-color: var(--accent); color: var(--accent); }
+    .card-add-form {
+      display: none;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin-top: 0.6rem;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+    }
+    .card-add-form.open { display: flex; }
+    .card-add-form .form-group input { background: var(--surface); }
+    .card-add-submit {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .card-add-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .auto-tokenize-notice {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.55rem 0.75rem;
+      background: rgba(79,126,248,0.07);
+      border: 1px solid rgba(79,126,248,0.25);
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+
+    /* ── DC API ── */
+    .dc-api-step {
+      margin-bottom: 0.75rem;
+      padding: 0.6rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      border: 1px solid rgba(79,126,248,0.25);
+      background: rgba(79,126,248,0.05);
+    }
+    .dc-api-step-title {
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 0.2rem;
+      font-size: 0.78rem;
+    }
+    .dc-api-unsupported {
+      margin-top: 0.4rem;
+      padding: 0.35rem 0.6rem;
+      background: rgba(120,120,120,0.07);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🛍️ UCP Shopping Agent Demo</h1>
+    <p>b-mcp-server (UCP Shopping MCP) との疎通確認</p>
+  </div>
+  <div id="api-badge" class="badge">読み込み中...</div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="demo">デモフロー</button>
+    <button class="tab-btn"        data-tab="chat">AI チャット</button>
+  </div>
+
+  <!-- ── Demo Tab ── -->
+  <div id="pane-demo" class="tab-pane active">
+    <p class="demo-desc">
+      ショッピングの全工程を自動実行して b-mcp-server との疎通を確認します。<br>
+      各ステップで UCP MCP ツールを呼び出し、レスポンスを表示します。
+    </p>
+
+    <div id="ph-badge" class="ph-badge off" style="display:none">
+      💳 Payment Handler 未接続（PAYMENT_HANDLER_URL 未設定）
+    </div>
+
+    <div class="flow-diagram">
+      <span class="node">search_catalog</span>
+      <span class="arrow">→</span>
+      <span class="node">get_product</span>
+      <span class="arrow">→</span>
+      <span class="node">create_cart</span>
+      <span class="arrow">→</span>
+      <span class="node">create_checkout</span>
+      <span class="arrow" id="flow-tok-arrow" style="display:none">→</span>
+      <span class="node" id="flow-tok-node" style="display:none; background:#e6ffe6; border-color:#2e9e5b; color:#1a6b3a">POST /tokenize</span>
+      <span class="arrow">→</span>
+      <span class="node">update_checkout</span>
+      <span class="arrow">→</span>
+      <span class="node">complete_checkout</span>
+    </div>
+
+    <button class="run-btn" id="run-btn">▶ デモを実行</button>
+
+    <div id="steps" class="steps"></div>
+
+    <!-- クレジットカード入力フォーム（Payment Handler 設定時に表示） -->
+    <div id="payment-form-wrap" style="display:none">
+      <div class="card-form-section">
+        <h3>💳 クレジットカード情報を入力</h3>
+        <p class="sub-desc">
+          Payment Handler が設定されています。カード情報を入力して決済トークンを発行できます。<br>
+          デモ環境ではテストカード番号 <code style="font-size:0.78rem;background:rgba(0,0,0,0.05);padding:0 4px;border-radius:3px">4242 4242 4242 4242</code> をご利用ください。
+        </p>
+        <div class="card-form">
+          <div class="form-group">
+            <label for="card-number">カード番号</label>
+            <input id="card-number" type="text" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="card-expiry">有効期限</label>
+              <input id="card-expiry" type="text" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp" />
+            </div>
+            <div class="form-group">
+              <label for="card-cvc">CVV</label>
+              <input id="card-cvc" type="text" placeholder="123" maxlength="4" autocomplete="cc-csc" />
+            </div>
+          </div>
+          <input type="hidden" id="form-checkout-id" />
+          <button class="tokenize-btn" id="tokenize-btn">💳 決済トークンを発行</button>
+        </div>
+        <div id="token-result" class="token-result"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Chat Tab ── -->
+  <div id="pane-chat" class="tab-pane">
+    <!-- サブタブ -->
+    <div class="sub-tabs">
+      <button class="sub-tab-btn active" data-subtab="ucp">UCP フロー</button>
+      <button class="sub-tab-btn"        data-subtab="ap2">AP2 HNP フロー</button>
+      <button class="sub-tab-btn"        data-subtab="ap2hp">AP2 HP フロー</button>
+    </div>
+
+    <!-- UCP フロー サブタブ -->
+    <div id="sub-pane-ucp" class="sub-tab-pane active">
+
+      <!-- ログイン済みバー（ログイン時のみ表示） -->
+      <div id="logged-in-bar" class="logged-in-bar" style="display:none">
+        <span class="user-icon">👤</span>
+        <div class="user-info">
+          <div class="user-email" id="logged-in-email"></div>
+          <div class="user-name"  id="logged-in-name"></div>
+        </div>
+        <button class="logout-btn" id="logout-btn">ログアウト</button>
+      </div>
+
+      <!-- 登録済みカード管理パネル（ログイン時のみ表示） -->
+      <div id="card-manage-panel" style="display:none; margin-bottom:1rem;">
+        <div class="auth-panel" style="padding:1rem 1.25rem">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.5rem">
+            <span style="font-size:0.82rem;font-weight:700">💳 登録済み決済カード</span>
+          </div>
+          <div id="card-list" class="card-list"></div>
+          <div class="card-add-section">
+            <button class="card-add-toggle" id="card-add-toggle-btn">＋ カードを追加</button>
+            <div class="card-add-form" id="card-add-form">
+              <div class="form-group">
+                <label for="new-card-holder">カード名義人</label>
+                <input id="new-card-holder" type="text" placeholder="TARO YAMADA" style="text-transform:uppercase" />
+              </div>
+              <div class="form-group">
+                <label for="new-card-number">カード番号</label>
+                <input id="new-card-number" type="text" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" />
+              </div>
+              <div class="settings-form-row">
+                <div class="form-group">
+                  <label for="new-card-expiry">有効期限</label>
+                  <input id="new-card-expiry" type="text" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp" />
+                </div>
+                <div class="form-group">
+                  <label for="new-card-cvc">CVV <span style="font-size:0.65rem;font-weight:400;color:var(--muted)">(保存されません)</span></label>
+                  <input id="new-card-cvc" type="text" placeholder="123" maxlength="4" autocomplete="cc-csc" />
+                </div>
+              </div>
+              <div id="card-add-result" class="auth-result"></div>
+              <button class="card-add-submit" id="card-add-submit-btn">カードを登録</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 認証パネル（未ログイン時のみ表示） -->
+      <div id="auth-panel" class="auth-panel">
+        <div class="auth-tabs">
+          <button class="auth-tab-btn active" data-authtab="login">ログイン</button>
+          <button class="auth-tab-btn"        data-authtab="signup">サインアップ</button>
+        </div>
+
+        <!-- ログインタブ -->
+        <div id="auth-pane-login" class="auth-tab-pane active">
+          <div class="auth-form">
+            <button class="google-signin-btn" id="google-login-btn">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+              Google でログイン
+            </button>
+            <div class="auth-divider">または</div>
+            <div class="form-group">
+              <label for="login-email">メールアドレス</label>
+              <input id="login-email" type="email" placeholder="taro@example.com" />
+            </div>
+            <div class="form-group">
+              <label for="login-password">パスワード</label>
+              <input id="login-password" type="password" placeholder="パスワード" />
+            </div>
+            <button class="auth-submit-btn" id="login-btn">ログイン</button>
+            <div id="login-result" class="auth-result"></div>
+          </div>
+        </div>
+
+        <!-- サインアップタブ -->
+        <div id="auth-pane-signup" class="auth-tab-pane">
+          <div class="auth-form">
+            <button class="google-signin-btn" id="google-signup-btn">
+              <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+              Google でサインアップ（フォームに自動入力）
+            </button>
+            <div class="auth-divider">または手動入力</div>
+            <div class="settings-form-row">
+              <div class="form-group">
+                <label for="signup-first-name">名（First Name）</label>
+                <input id="signup-first-name" type="text" placeholder="Taro" />
+              </div>
+              <div class="form-group">
+                <label for="signup-last-name">姓（Last Name）</label>
+                <input id="signup-last-name" type="text" placeholder="Yamada" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="signup-email">メールアドレス</label>
+              <input id="signup-email" type="email" placeholder="taro@example.com" />
+            </div>
+            <div class="form-group">
+              <label for="signup-password">パスワード</label>
+              <input id="signup-password" type="password" placeholder="パスワード（6文字以上）" />
+            </div>
+            <div class="settings-section-title" style="margin-top:0.5rem">配送先住所（オプション）</div>
+            <div class="settings-form-row">
+              <div class="form-group">
+                <label for="signup-postal">郵便番号</label>
+                <input id="signup-postal" type="text" placeholder="150-0044" />
+              </div>
+              <div class="form-group">
+                <label for="signup-country">国コード</label>
+                <input id="signup-country" type="text" placeholder="JP" maxlength="2" style="text-transform:uppercase" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="signup-address1">住所 1</label>
+              <input id="signup-address1" type="text" placeholder="渋谷区桜丘町 1-1" />
+            </div>
+            <div class="settings-form-row">
+              <div class="form-group" style="flex:2">
+                <label for="signup-city">市区町村</label>
+                <input id="signup-city" type="text" placeholder="渋谷区" />
+              </div>
+              <div class="form-group">
+                <label for="signup-province">都道府県</label>
+                <input id="signup-province" type="text" placeholder="東京都" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="signup-phone">電話番号（オプション）</label>
+              <input id="signup-phone" type="tel" placeholder="09000000000" />
+            </div>
+            <div class="settings-section-title" style="margin-top:0.5rem">決済カード（オプション）</div>
+            <p style="font-size:0.75rem;color:var(--muted);margin-bottom:0.25rem">登録するとチェックアウト時に自動的に使用されます。カード番号の下 4 桁とブランドのみ保存されます。</p>
+            <div class="form-group">
+              <label for="signup-card-holder">カード名義人</label>
+              <input id="signup-card-holder" type="text" placeholder="TARO YAMADA" style="text-transform:uppercase" />
+            </div>
+            <div class="form-group">
+              <label for="signup-card-number">カード番号</label>
+              <input id="signup-card-number" type="text" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" />
+            </div>
+            <div class="settings-form-row">
+              <div class="form-group">
+                <label for="signup-card-expiry">有効期限</label>
+                <input id="signup-card-expiry" type="text" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp" />
+              </div>
+              <div class="form-group">
+                <label for="signup-card-cvc">CVV <span style="font-size:0.65rem;font-weight:400;color:var(--muted)">(保存されません)</span></label>
+                <input id="signup-card-cvc" type="text" placeholder="123" maxlength="4" autocomplete="cc-csc" />
+              </div>
+            </div>
+            <button class="auth-submit-btn" id="signup-btn">アカウントを作成</button>
+            <div id="signup-result" class="auth-result"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- チャットエリア（ログイン後に有効） -->
+      <div class="chat-toolbar">
+        <button class="settings-btn" id="settings-open-btn">
+          ⚙️ 購入者情報設定<span class="profile-set-badge" id="settings-profile-badge" style="display:none">✓</span>
+        </button>
+      </div>
+      <div id="chat-area"></div>
+    </div>
+
+    <!-- AP2 HP フロー サブタブ -->
+    <div id="sub-pane-ap2hp" class="sub-tab-pane">
+      <!-- AP2 HP チャット -->
+      <div class="chat-toolbar" style="margin-top:0.25rem">
+        <button class="settings-btn" id="ap2hp-settings-open-btn">
+          ⚙️ 購入者情報設定<span class="profile-set-badge" id="ap2hp-settings-profile-badge" style="display:none">✓</span>
+        </button>
+      </div>
+      <div id="ap2hp-chat-area"></div>
+
+      <!-- AP2 HP 詳細設定（折りたたみ） -->
+      <details id="ap2hp-config-details" style="margin-top:1rem">
+        <summary style="cursor:pointer;font-size:0.82rem;color:var(--muted);padding:0.3rem 0">
+          ⚙️ 詳細設定（支払い手段・マーチャント情報）
+        </summary>
+        <div class="ap2-panel" style="margin-top:0.5rem">
+          <div class="ap2-intent-form" id="ap2hp-config-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ap2hp-instrument">支払い手段</label>
+                <select id="ap2hp-instrument">
+                  <option value="card_visa_4242">Visa ···· 4242</option>
+                  <option value="card_mc_5555">Mastercard ···· 5555</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="ap2hp-max-amount">最大金額（JPY）</label>
+                <input id="ap2hp-max-amount" type="number" value="50000" style="background:var(--bg)" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ap2hp-merchant-id">マーチャント ID</label>
+                <input id="ap2hp-merchant-id" type="text" value="merchant_1" style="background:var(--bg)" />
+              </div>
+              <div class="form-group">
+                <label for="ap2hp-merchant-name">マーチャント名</label>
+                <input id="ap2hp-merchant-name" type="text" value="Demo Merchant" style="background:var(--bg)" />
+              </div>
+            </div>
+            <button class="ap2-init-btn" id="ap2hp-config-btn">⚙️ 設定を反映してチャットをリセット</button>
+          </div>
+          <div id="ap2hp-config-result" class="ap2-init-result"></div>
+        </div>
+      </details>
+    </div>
+
+    <!-- AP2 HNP フロー サブタブ -->
+    <div id="sub-pane-ap2" class="sub-tab-pane">
+      <!-- AP2 前授権パネル -->
+      <div class="ap2-panel">
+        <div class="ap2-panel-header">
+          <div class="ap2-panel-title">🔑 AP2 前授権（Open Mandate）</div>
+          <div id="ap2-session-badge" class="ap2-session-badge inactive">未委任</div>
+        </div>
+        <p class="ap2-panel-desc">
+          購入前にショッピングエージェントへの委任状（Open Mandate）を Trusted Surface から発行します。<br>
+          エージェントはこの委任状の制約範囲内で自律的に購入を完了できます。
+        </p>
+        <div id="ap2-intent-form" class="ap2-intent-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="ap2-max-amount">最大金額（JPY）</label>
+              <input id="ap2-max-amount" type="number" value="50000" style="background:var(--bg)" />
+            </div>
+            <div class="form-group">
+              <label for="ap2-instrument">支払い手段</label>
+              <select id="ap2-instrument">
+                <option value="card_visa_4242">Visa ···· 4242</option>
+                <option value="card_mc_5555">Mastercard ···· 5555</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="ap2-merchant-id">許可マーチャント ID</label>
+              <input id="ap2-merchant-id" type="text" value="merchant_1" style="background:var(--bg)" />
+            </div>
+            <div class="form-group">
+              <label for="ap2-merchant-name">マーチャント名</label>
+              <input id="ap2-merchant-name" type="text" value="Demo Merchant" style="background:var(--bg)" />
+            </div>
+          </div>
+          <div class="cmwallet-notice" id="cmwallet-notice">
+            🪪 <strong>事前準備（Android）:</strong>
+            DPC クレデンシャルを発行したら <strong>CMWallet アプリ</strong> を起動してクレデンシャルを登録してください。
+            「委任を開始」を押すと Digital Credentials API が呼び出され、CMWallet が起動します（Chrome on Android が必要です）。
+          </div>
+          <button class="ap2-init-btn" id="ap2-init-btn">🔑 委任を開始</button>
+        </div>
+        <div id="ap2-init-result" class="ap2-init-result"></div>
+      </div>
+
+      <!-- AP2 チャット -->
+      <div class="chat-toolbar" style="margin-top:0.25rem">
+        <button class="settings-btn" id="ap2-settings-open-btn">
+          ⚙️ 購入者情報設定<span class="profile-set-badge" id="ap2-settings-profile-badge" style="display:none">✓</span>
+        </button>
+      </div>
+      <div id="ap2-chat-area"></div>
+    </div>
+  </div>
+</main>
+
+
+<!-- ── Settings Modal ────────────────────────────────────────────────────────── -->
+<div id="settings-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; z-index:1000">
+  <div class="settings-modal">
+    <div class="modal-header">
+      <h3>⚙️ 購入者情報設定</h3>
+      <button class="modal-close" id="settings-close-btn" title="閉じる">✕</button>
+    </div>
+    <p class="modal-desc">
+      ここで登録した情報は AI エージェントが配送先・連絡先として自動入力します。<br>
+      情報はブラウザのローカルストレージに保存されます。
+    </p>
+    <div class="settings-section-title">氏名</div>
+    <div class="settings-form-row">
+      <div class="form-group">
+        <label for="s-first-name">名（First Name）</label>
+        <input id="s-first-name" type="text" placeholder="Taro" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-last-name">姓（Last Name）</label>
+        <input id="s-last-name" type="text" placeholder="Yamada" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-section-title">連絡先</div>
+    <div class="settings-form-row">
+      <div class="form-group" style="flex:2">
+        <label for="s-email">メールアドレス</label>
+        <input id="s-email" type="email" placeholder="taro@example.com" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-phone">電話番号</label>
+        <input id="s-phone" type="tel" placeholder="09000000000" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-section-title">住所</div>
+    <div class="settings-form-row">
+      <div class="form-group">
+        <label for="s-postal">郵便番号</label>
+        <input id="s-postal" type="text" placeholder="150-0044" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-country">国コード</label>
+        <input id="s-country" type="text" placeholder="JP" maxlength="2" style="background:var(--bg);text-transform:uppercase" />
+      </div>
+    </div>
+    <div class="settings-form-group">
+      <div class="form-group">
+        <label for="s-address1">住所 1</label>
+        <input id="s-address1" type="text" placeholder="桜丘町 1-1" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-form-group">
+      <div class="form-group">
+        <label for="s-address2">住所 2（建物名等）</label>
+        <input id="s-address2" type="text" placeholder="○○マンション 201" style="background:var(--bg)" />
+      </div>
+    </div>
+    <div class="settings-form-row">
+      <div class="form-group" style="flex:2">
+        <label for="s-city">市区町村</label>
+        <input id="s-city" type="text" placeholder="渋谷区" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="s-province">都道府県</label>
+        <input id="s-province" type="text" placeholder="東京都" style="background:var(--bg)" />
+      </div>
+    </div>
+    <button class="settings-save-btn" id="settings-save-btn">保存</button>
+  </div>
+</div>
+
+<!-- ── Shipping Info Modal ─────────────────────────────────────────────────────── -->
+<div id="shipping-modal-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; z-index:1000">
+  <div class="payment-modal">
+    <div class="modal-header">
+      <h3>📦 配送先・連絡先を入力</h3>
+      <button class="modal-close" id="shipping-close-btn" title="閉じる">✕</button>
+    </div>
+    <p class="modal-desc">
+      AI が配送情報を求めています。情報を確認・入力して「チャットに送信」を押してください。
+    </p>
+    <div class="card-form">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sh-first-name">名</label>
+          <input id="sh-first-name" type="text" placeholder="Taro" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-last-name">姓</label>
+          <input id="sh-last-name" type="text" placeholder="Yamada" style="background:var(--bg)" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label for="sh-email">メール</label>
+          <input id="sh-email" type="email" placeholder="taro@example.com" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-phone">電話番号</label>
+          <input id="sh-phone" type="tel" placeholder="09000000000" style="background:var(--bg)" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="sh-address1">住所 1</label>
+        <input id="sh-address1" type="text" placeholder="渋谷区桜丘町 1-1" style="background:var(--bg)" />
+      </div>
+      <div class="form-group">
+        <label for="sh-address2">住所 2（建物名等）</label>
+        <input id="sh-address2" type="text" placeholder="○○マンション 201" style="background:var(--bg)" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sh-city">市区町村</label>
+          <input id="sh-city" type="text" placeholder="渋谷区" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-province">都道府県</label>
+          <input id="sh-province" type="text" placeholder="東京都" style="background:var(--bg)" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="sh-postal">郵便番号</label>
+          <input id="sh-postal" type="text" placeholder="150-0044" style="background:var(--bg)" />
+        </div>
+        <div class="form-group">
+          <label for="sh-country">国コード</label>
+          <input id="sh-country" type="text" placeholder="JP" maxlength="2" style="background:var(--bg);text-transform:uppercase" />
+        </div>
+      </div>
+    </div>
+    <button id="shipping-send-btn" class="modal-send-btn">チャットに送信</button>
+  </div>
+</div>
+
+<!-- ── Payment Modal ────────────────────────────────────────────────────────── -->
+<div id="payment-modal-overlay" style="display:none">
+  <div class="payment-modal">
+    <div class="modal-header">
+      <h3>💳 クレジットカード情報を入力</h3>
+      <button class="modal-close" id="modal-close-btn" title="閉じる">✕</button>
+    </div>
+    <p class="modal-desc">
+      チェックアウトが開始されました。決済を完了するためにカード情報を入力してください。<br>
+      デモ環境では <code style="font-size:0.75rem;background:rgba(0,0,0,0.06);padding:0 4px;border-radius:3px">4242 4242 4242 4242</code> をご利用ください。
+    </p>
+    <div class="card-form">
+      <div class="form-group">
+        <label for="modal-card-number">カード番号</label>
+        <input id="modal-card-number" type="text" placeholder="4242 4242 4242 4242" maxlength="19" autocomplete="cc-number" />
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="modal-card-expiry">有効期限</label>
+          <input id="modal-card-expiry" type="text" placeholder="MM/YY" maxlength="5" autocomplete="cc-exp" />
+        </div>
+        <div class="form-group">
+          <label for="modal-card-cvc">CVV</label>
+          <input id="modal-card-cvc" type="text" placeholder="123" maxlength="4" autocomplete="cc-csc" />
+        </div>
+      </div>
+      <input type="hidden" id="modal-checkout-id" />
+      <button class="tokenize-btn" id="modal-tokenize-btn">💳 決済トークンを発行</button>
+    </div>
+    <div id="modal-token-result" class="token-result"></div>
+    <button id="modal-send-btn" class="modal-send-btn" style="display:none">チャットに送信</button>
+  </div>
+</div>
+
+<script>
+/* ── State ──────────────────────────────────────────────────────────────────── */
+let chatHistory      = [];
+let ap2ChatHistory   = [];
+let ap2HpChatHistory = [];
+let hasApiKey         = false;
+let hasPaymentHandler = false;
+let hasTrustedSurface = false;
+let ap2SessionActive  = false;
+let ap2HpAvailable    = false;
+let ap2HpConfigured   = true;   // デフォルト値で即時起動（詳細設定は折りたたみ）
+let lastCheckoutId    = null;
+let shippingInfoSent  = false;
+let ap2ShippingInfoSent   = false;
+let ap2HpShippingInfoSent = false;
+let ap2OpenPaymentMandate  = null;
+let ap2OpenCheckoutMandate = null;
+let _googleClientId   = null;
+let _authSession      = null; // { email, profile, cards } — サーバーのセッション状態ミラー
+
+/* ── Auth ────────────────────────────────────────────────────────────────────── */
+
+function cardBrandIcon(brand) {
+  const icons = { visa: "💳", mastercard: "💳", amex: "💳", discover: "💳" };
+  return icons[brand] ?? "💳";
+}
+
+function cardBrandLabel(brand) {
+  const labels = { visa: "Visa", mastercard: "Mastercard", amex: "Amex", discover: "Discover" };
+  return labels[brand] ?? "Card";
+}
+
+function renderCardList(cards) {
+  const listEl = document.getElementById("card-list");
+  if (!listEl) return;
+  if (!cards || cards.length === 0) {
+    listEl.innerHTML = `<div style="font-size:0.78rem;color:var(--muted);padding:0.25rem 0">カードが登録されていません</div>`;
+    return;
+  }
+  listEl.innerHTML = cards.map(c => `
+    <div class="card-item" id="card-item-${c.cardId}">
+      <span class="card-brand-icon">${cardBrandIcon(c.brand)}</span>
+      <div class="card-info">
+        <div class="card-number-text">${cardBrandLabel(c.brand)} ···· ${esc(c.last_four)}</div>
+        <div class="card-expiry-text">${c.holder_name ? esc(c.holder_name) + " / " : ""}有効期限: ${esc(c.exp_month)}/${esc(c.exp_year)}</div>
+      </div>
+      <button class="card-delete-btn" onclick="deleteCard('${esc(c.cardId)}')">削除</button>
+    </div>
+  `).join("");
+}
+
+function updateAuthUI() {
+  const panel      = document.getElementById("auth-panel");
+  const bar        = document.getElementById("logged-in-bar");
+  const cardPanel  = document.getElementById("card-manage-panel");
+
+  if (_authSession) {
+    if (panel) panel.style.display = "none";
+    if (bar) {
+      bar.style.display = "flex";
+      const nameEl  = document.getElementById("logged-in-name");
+      const emailEl = document.getElementById("logged-in-email");
+      if (emailEl) emailEl.textContent = _authSession.email;
+      if (nameEl) {
+        const n = [_authSession.profile?.first_name, _authSession.profile?.last_name].filter(Boolean).join(" ");
+        nameEl.textContent = n || "";
+        nameEl.style.display = n ? "" : "none";
+      }
+    }
+    if (cardPanel) {
+      cardPanel.style.display = "";
+      renderCardList(_authSession.cards ?? []);
+    }
+  } else {
+    if (panel) panel.style.display = "";
+    if (bar) bar.style.display = "none";
+    if (cardPanel) cardPanel.style.display = "none";
+  }
+}
+
+function showAuthResult(elId, ok, msg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.className = "auth-result " + (ok ? "ok" : "err");
+  el.textContent = msg;
+  el.style.display = "block";
+}
+
+async function doLogin() {
+  const email    = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  if (!email || !password) { showAuthResult("login-result", false, "メールアドレスとパスワードを入力してください"); return; }
+
+  const btn = document.getElementById("login-btn");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      _authSession = { email: d.email ?? email, profile: d.profile ?? d.user?.profile ?? {}, cards: d.user?.cards ?? [] };
+      updateAuthUI();
+      // ログイン後に設定プロフィールへ反映
+      syncProfileFromAuth();
+    } else {
+      showAuthResult("login-result", false, d.error ?? "ログインに失敗しました");
+    }
+  } catch (e) {
+    showAuthResult("login-result", false, "通信エラー: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doSignup() {
+  const email     = document.getElementById("signup-email").value.trim();
+  const password  = document.getElementById("signup-password").value;
+  const firstName = document.getElementById("signup-first-name").value.trim();
+  const lastName  = document.getElementById("signup-last-name").value.trim();
+  if (!email || !password) { showAuthResult("signup-result", false, "メールアドレスとパスワードを入力してください"); return; }
+  if (password.length < 6) { showAuthResult("signup-result", false, "パスワードは 6 文字以上で入力してください"); return; }
+
+  const profile = {
+    first_name: firstName,
+    last_name:  lastName,
+    phone:      document.getElementById("signup-phone").value.trim(),
+    postal:     document.getElementById("signup-postal").value.trim(),
+    country:    document.getElementById("signup-country").value.toUpperCase().trim(),
+    address1:   document.getElementById("signup-address1").value.trim(),
+    city:       document.getElementById("signup-city").value.trim(),
+    province:   document.getElementById("signup-province").value.trim(),
+  };
+
+  // カード情報（任意）
+  const rawCardNum = document.getElementById("signup-card-number").value.replace(/\s/g, "");
+  let card = null;
+  if (rawCardNum.length >= 4) {
+    const expiry = document.getElementById("signup-card-expiry").value;
+    const [expM, expY] = expiry.split("/").map(s => s.trim());
+    card = {
+      card_number:  rawCardNum,
+      holder_name:  document.getElementById("signup-card-holder").value.trim(),
+      exp_month:    expM ?? "",
+      exp_year:     expY ? (expY.length === 2 ? "20" + expY : expY) : "",
+    };
+  }
+
+  const btn = document.getElementById("signup-btn");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password, profile, card }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      _authSession = { email: d.email ?? email, profile: d.user?.profile ?? profile, cards: d.user?.cards ?? [] };
+      updateAuthUI();
+      syncProfileFromAuth();
+    } else {
+      showAuthResult("signup-result", false, d.error ?? "サインアップに失敗しました");
+    }
+  } catch (e) {
+    showAuthResult("signup-result", false, "通信エラー: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function doLogout() {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  _authSession = null;
+  updateAuthUI();
+}
+
+function syncProfileFromAuth() {
+  if (!_authSession?.profile) return;
+  const p = loadBuyerProfile();
+  const merged = { ...p };
+  const pr = _authSession.profile;
+  if (!merged.first_name && pr.first_name) merged.first_name = pr.first_name;
+  if (!merged.last_name  && pr.last_name)  merged.last_name  = pr.last_name;
+  if (!merged.email      && _authSession.email) merged.email = _authSession.email;
+  if (!merged.phone      && pr.phone)      merged.phone      = pr.phone;
+  if (!merged.postal     && pr.postal)     merged.postal     = pr.postal;
+  if (!merged.country    && pr.country)    merged.country     = pr.country;
+  if (!merged.address1   && pr.address1)   merged.address1   = pr.address1;
+  if (!merged.city       && pr.city)       merged.city        = pr.city;
+  if (!merged.province   && pr.province)   merged.province    = pr.province;
+  saveBuyerProfile(merged);
+  updateSettingsBtnBadge();
+}
+
+function prefillSignupFromGoogle(googleInfo) {
+  if (googleInfo.given_name)  document.getElementById("signup-first-name").value = googleInfo.given_name;
+  if (googleInfo.family_name) document.getElementById("signup-last-name").value  = googleInfo.family_name;
+  if (googleInfo.email)       document.getElementById("signup-email").value       = googleInfo.email;
+  // パスワードは Google SSO なので不要 → サインアップボタンを直接実行できるようランダム生成で埋める
+  // 実際には Google ユーザーはパスワードを持たないため server側でもハッシュはnull
+}
+
+async function handleGoogleCallback(response, mode) {
+  // mode: "login" or "signup"
+  const id_token = response.credential;
+  try {
+    const r = await fetch("/api/auth/google", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id_token }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      if (mode === "signup" && d.google_info) {
+        prefillSignupFromGoogle(d.google_info);
+      }
+      _authSession = { email: d.email ?? d.user?.email ?? "", profile: d.user?.profile ?? {}, cards: d.user?.cards ?? [] };
+      updateAuthUI();
+      syncProfileFromAuth();
+    } else {
+      const elId = mode === "signup" ? "signup-result" : "login-result";
+      showAuthResult(elId, false, d.error ?? "Google 認証に失敗しました");
+    }
+  } catch (e) {
+    const elId = mode === "signup" ? "signup-result" : "login-result";
+    showAuthResult(elId, false, "通信エラー: " + e.message);
+  }
+}
+
+/* ── Card Management ─────────────────────────────────────────────────────────── */
+
+async function addCard() {
+  const btn       = document.getElementById("card-add-submit-btn");
+  const resultEl  = document.getElementById("card-add-result");
+  const rawNum    = document.getElementById("new-card-number").value.replace(/\s/g, "");
+  const holder    = document.getElementById("new-card-holder").value.trim();
+  const expiry    = document.getElementById("new-card-expiry").value;
+  const [expM, expY] = expiry.split("/").map(s => s.trim());
+
+  if (rawNum.length < 4) { showAuthResult("card-add-result", false, "カード番号を入力してください"); return; }
+
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/auth/cards", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        card_number:  rawNum,
+        holder_name:  holder,
+        exp_month:    expM ?? "",
+        exp_year:     expY ? (expY.length === 2 ? "20" + expY : expY) : "",
+      }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      if (_authSession) _authSession.cards = d.cards ?? [];
+      renderCardList(_authSession?.cards ?? []);
+      // フォームをリセット・閉じる
+      document.getElementById("new-card-number").value = "";
+      document.getElementById("new-card-holder").value = "";
+      document.getElementById("new-card-expiry").value = "";
+      document.getElementById("new-card-cvc").value    = "";
+      document.getElementById("card-add-form").classList.remove("open");
+      resultEl.style.display = "none";
+    } else {
+      showAuthResult("card-add-result", false, d.error ?? "カードの追加に失敗しました");
+    }
+  } catch (e) {
+    showAuthResult("card-add-result", false, "通信エラー: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteCard(cardId) {
+  if (!confirm("このカードを削除しますか？")) return;
+  try {
+    const r = await fetch(`/api/auth/cards/${encodeURIComponent(cardId)}`, { method: "DELETE" });
+    const d = await r.json();
+    if (d.ok) {
+      if (_authSession) _authSession.cards = d.cards ?? [];
+      renderCardList(_authSession?.cards ?? []);
+    }
+  } catch {}
+}
+
+function initGoogleSignIn(clientId) {
+  if (!clientId || !window.google?.accounts?.id) return;
+  google.accounts.id.initialize({
+    client_id: clientId,
+    callback: (resp) => {
+      // どちらのボタンが最後に押されたかを判断
+      const activeTab = document.querySelector(".auth-tab-btn.active")?.dataset?.authtab ?? "login";
+      handleGoogleCallback(resp, activeTab);
+    },
+  });
+}
+
+/* ── Buyer Profile (localStorage) ───────────────────────────────────────────── */
+const PROFILE_KEY = "ucp_buyer_profile";
+
+function loadBuyerProfile() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) ?? "null") ?? {}; } catch { return {}; }
+}
+function saveBuyerProfile(p) {
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(p));
+}
+function updateSettingsBtnBadge() {
+  const p = loadBuyerProfile();
+  const hasData = !!(p.first_name || p.email || p.address1);
+  const badge = document.getElementById("settings-profile-badge");
+  if (badge) badge.style.display = hasData ? "inline" : "none";
+}
+
+/* ── Init ───────────────────────────────────────────────────────────────────── */
+(async function init() {
+  // Main tab switching
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("pane-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+
+  // Sub-tab switching (UCP / AP2)
+  document.querySelectorAll(".sub-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".sub-tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".sub-tab-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("sub-pane-" + btn.dataset.subtab).classList.add("active");
+      // AP2 HP タブを開いたらチャットエリアを初期化（未初期化の場合のみ）
+      if (btn.dataset.subtab === "ap2hp") {
+        const area = document.getElementById("ap2hp-chat-area");
+        if (area && !area.querySelector(".chat-messages")) renderAp2HpChatArea();
+      }
+    });
+  });
+
+  // Demo button
+  document.getElementById("run-btn").addEventListener("click", runDemo);
+
+  // Tokenize button (demo tab)
+  document.getElementById("tokenize-btn").addEventListener("click", tokenizeCard);
+
+  // Card number auto-format (groups of 4) — demo tab
+  document.getElementById("card-number").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 16);
+    this.value = v.replace(/(.{4})/g, "$1 ").trim();
+  });
+
+  // Expiry auto-slash — demo tab
+  document.getElementById("card-expiry").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+    this.value = v;
+  });
+
+  // CVV: digits only — demo tab
+  document.getElementById("card-cvc").addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 4);
+  });
+
+  // Modal events
+  document.getElementById("modal-close-btn").addEventListener("click", closePaymentModal);
+  document.getElementById("modal-tokenize-btn").addEventListener("click", modalTokenizeCard);
+  document.getElementById("modal-send-btn").addEventListener("click", modalSendToChat);
+  document.getElementById("payment-modal-overlay").addEventListener("click", function(e) {
+    if (e.target === this) closePaymentModal();
+  });
+
+  // Modal card number auto-format
+  document.getElementById("modal-card-number").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 16);
+    this.value = v.replace(/(.{4})/g, "$1 ").trim();
+  });
+
+  // Modal expiry auto-slash
+  document.getElementById("modal-card-expiry").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+    this.value = v;
+  });
+
+  // Modal CVV: digits only
+  document.getElementById("modal-card-cvc").addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 4);
+  });
+
+  // Settings modal events (UCP)
+  document.getElementById("settings-open-btn").addEventListener("click", openSettingsModal);
+  document.getElementById("settings-close-btn").addEventListener("click", closeSettingsModal);
+  document.getElementById("settings-save-btn").addEventListener("click", saveSettingsAndClose);
+  document.getElementById("settings-modal-overlay").addEventListener("click", function(e) {
+    if (e.target === this) closeSettingsModal();
+  });
+
+  // Settings modal events (AP2 HNP)
+  document.getElementById("ap2-settings-open-btn").addEventListener("click", openSettingsModal);
+
+  // Settings modal events (AP2 HP)
+  document.getElementById("ap2hp-settings-open-btn").addEventListener("click", openSettingsModal);
+
+  // AP2 HNP init
+  document.getElementById("ap2-init-btn").addEventListener("click", initAp2Session);
+
+  // AP2 HP config
+  document.getElementById("ap2hp-config-btn").addEventListener("click", initAp2HpSession);
+
+  // Shipping modal events
+  document.getElementById("shipping-close-btn").addEventListener("click", closeShippingModal);
+  document.getElementById("shipping-send-btn").addEventListener("click", sendShippingInfo);
+  document.getElementById("shipping-modal-overlay").addEventListener("click", function(e) {
+    if (e.target === this) closeShippingModal();
+  });
+
+  // Show profile badge if already set
+  updateSettingsBtnBadge();
+
+  // Auth tab switching
+  document.querySelectorAll(".auth-tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".auth-tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".auth-tab-pane").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("auth-pane-" + btn.dataset.authtab).classList.add("active");
+    });
+  });
+
+  // Auth buttons
+  document.getElementById("login-btn").addEventListener("click", doLogin);
+  document.getElementById("signup-btn").addEventListener("click", doSignup);
+  document.getElementById("logout-btn").addEventListener("click", doLogout);
+
+  // Google SSO buttons (manual GIS render as custom button)
+  document.getElementById("google-login-btn").addEventListener("click", () => {
+    if (!_googleClientId) { showAuthResult("login-result", false, "GOOGLE_CLIENT_ID が設定されていません"); return; }
+    if (!window.google?.accounts?.id) { showAuthResult("login-result", false, "Google Sign-In ライブラリが読み込まれていません"); return; }
+    google.accounts.id.prompt();
+  });
+  document.getElementById("google-signup-btn").addEventListener("click", () => {
+    if (!_googleClientId) { showAuthResult("signup-result", false, "GOOGLE_CLIENT_ID が設定されていません"); return; }
+    if (!window.google?.accounts?.id) { showAuthResult("signup-result", false, "Google Sign-In ライブラリが読み込まれていません"); return; }
+    google.accounts.id.prompt();
+  });
+
+  // Enter key on login/signup forms
+  document.getElementById("login-password").addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+  document.getElementById("signup-phone").addEventListener("keydown", e => { if (e.key === "Enter") doSignup(); });
+
+  // Card number auto-format (signup form)
+  document.getElementById("signup-card-number").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 16);
+    this.value = v.replace(/(.{4})/g, "$1 ").trim();
+  });
+  document.getElementById("signup-card-expiry").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+    this.value = v;
+  });
+  document.getElementById("signup-card-cvc").addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 4);
+  });
+
+  // Card add form toggle and submit
+  document.getElementById("card-add-toggle-btn").addEventListener("click", () => {
+    document.getElementById("card-add-form").classList.toggle("open");
+  });
+  document.getElementById("card-add-submit-btn").addEventListener("click", addCard);
+
+  // Card add form input formatting
+  document.getElementById("new-card-number").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 16);
+    this.value = v.replace(/(.{4})/g, "$1 ").trim();
+  });
+  document.getElementById("new-card-expiry").addEventListener("input", function() {
+    let v = this.value.replace(/\D/g, "").slice(0, 4);
+    if (v.length >= 3) v = v.slice(0, 2) + "/" + v.slice(2);
+    this.value = v;
+  });
+  document.getElementById("new-card-cvc").addEventListener("input", function() {
+    this.value = this.value.replace(/\D/g, "").slice(0, 4);
+  });
+
+  // Check API status
+  try {
+    const [status, config] = await Promise.all([
+      fetch("/api/status").then(r => r.json()),
+      fetch("/api/config").then(r => r.json()),
+    ]);
+    hasApiKey         = status.gemini;
+    hasPaymentHandler = status.paymentHandler;
+    hasTrustedSurface = status.trustedSurface;
+    ap2SessionActive  = status.ap2SessionActive;
+    ap2HpAvailable    = status.ap2HpAvailable ?? false;
+    if (status.authSession) {
+      _authSession = { ...status.authSession, cards: status.authSession.cards ?? [] };
+    }
+    _googleClientId = config.googleClientId ?? null;
+    if (_googleClientId) {
+      // Google GIS が読み込まれるまで少し待つ
+      const waitGis = () => new Promise(resolve => {
+        if (window.google?.accounts?.id) return resolve();
+        let n = 0;
+        const t = setInterval(() => { if (window.google?.accounts?.id || ++n > 20) { clearInterval(t); resolve(); } }, 100);
+      });
+      waitGis().then(() => initGoogleSignIn(_googleClientId));
+    }
+  } catch {}
+
+  const badge = document.getElementById("api-badge");
+  badge.textContent = hasApiKey ? "GOOGLE_AI_STUDIO_API_KEY ✅" : "GOOGLE_AI_STUDIO_API_KEY ❌";
+  badge.className = "badge " + (hasApiKey ? "on" : "off");
+
+  // Payment Handler badge
+  const phBadge = document.getElementById("ph-badge");
+  phBadge.style.display = "inline-flex";
+  if (hasPaymentHandler) {
+    phBadge.className = "ph-badge on";
+    phBadge.textContent = "💳 Payment Handler 接続済み（決済トークン発行が有効）";
+    document.getElementById("flow-tok-arrow").style.display = "";
+    document.getElementById("flow-tok-node").style.display  = "";
+  } else {
+    phBadge.className = "ph-badge off";
+    phBadge.textContent = "💳 Payment Handler 未接続（PAYMENT_HANDLER_URL 未設定）";
+  }
+
+  updateAuthUI();
+  renderChatArea();
+  renderAp2ChatArea();
+  renderAp2HpChatArea();
+  updateAp2SessionBadge();
+})();
+
+/* ── Demo Flow ───────────────────────────────────────────────────────────────── */
+async function runDemo() {
+  const btn     = document.getElementById("run-btn");
+  const stepsEl = document.getElementById("steps");
+  const formWrap = document.getElementById("payment-form-wrap");
+
+  btn.disabled = true;
+  btn.textContent = "⏳ 実行中...";
+  stepsEl.innerHTML = `<div style="color:var(--muted);font-size:.875rem;padding:.5rem 0">b-mcp-server に接続中...</div>`;
+  formWrap.style.display = "none";
+  document.getElementById("token-result").style.display = "none";
+
+  try {
+    const res = await fetch("/api/demo", { method: "POST" });
+    const { ok, steps, error } = await res.json();
+
+    if (!ok) {
+      stepsEl.innerHTML = `<div style="color:var(--red);padding:.75rem;background:var(--surface);border-radius:8px;border:1px solid var(--border)">❌ エラー: ${esc(error)}</div>`;
+      return;
+    }
+
+    stepsEl.innerHTML = steps.map((s, i) => `
+      <div class="step-card ${s.ok ? "" : "fail"}" id="card-${i}">
+        <div class="step-header" onclick="toggleBody(${i})">
+          <span class="step-icon">${s.ok ? "✅" : "❌"}</span>
+          <span class="step-name">${i + 1}. ${esc(s.name)}</span>
+          <span class="step-tool">${s.tool}</span>
+          <span class="step-toggle" id="tog-${i}">▼</span>
+        </div>
+        <div class="step-body" id="body-${i}">
+          <pre>${esc(JSON.stringify(s.data, null, 2))}</pre>
+        </div>
+      </div>
+    `).join("");
+
+    // Open all steps
+    steps.forEach((_, i) => showBody(i, true));
+
+    // Extract checkout_id from create_checkout step for the payment form
+    const checkoutStep = steps.find(s => s.tool === "create_checkout");
+    if (checkoutStep?.data?.id) {
+      lastCheckoutId = checkoutStep.data.id;
+      document.getElementById("form-checkout-id").value = lastCheckoutId;
+    }
+
+    // Show card form when Payment Handler is configured
+    if (hasPaymentHandler) {
+      formWrap.style.display = "block";
+    }
+
+  } catch (err) {
+    stepsEl.innerHTML = `<div style="color:var(--red)">通信エラー: ${esc(err.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "▶ デモを再実行";
+  }
+}
+
+function toggleBody(i) {
+  const body = document.getElementById("body-" + i);
+  const tog  = document.getElementById("tog-" + i);
+  if (!body) return;
+  const open = body.style.display !== "block";
+  showBody(i, open);
+}
+
+function showBody(i, open) {
+  const body = document.getElementById("body-" + i);
+  const tog  = document.getElementById("tog-" + i);
+  if (!body) return;
+  body.style.display = open ? "block" : "none";
+  if (tog) tog.className = "step-toggle" + (open ? " open" : "");
+}
+
+/* ── Chat ────────────────────────────────────────────────────────────────────── */
+function renderChatArea() {
+  const area = document.getElementById("chat-area");
+
+  if (!hasApiKey) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ GOOGLE_AI_STUDIO_API_KEY が設定されていません</h3>
+        <p>AIチャット機能を使うには環境変数 <code>GOOGLE_AI_STUDIO_API_KEY</code> を設定してサーバを起動してください。</p>
+        <p style="margin-top:.5rem">例: <code>GOOGLE_AI_STUDIO_API_KEY=AIza... npm start</code></p>
+        <p style="margin-top:.75rem;color:var(--muted)">「デモフロー」タブは API キー不要で利用できます。</p>
+      </div>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="chat-wrap">
+      <div class="chat-messages" id="chat-msgs">
+        <div class="msg sys"><div class="bubble">
+          こんにちは！UCP ショッピングアシスタントです。<br>
+          商品検索・カート・チェックアウトをお手伝いします。
+        </div></div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="chat-in" rows="1" placeholder="例：ランニングシューズを探して&#10;Shift+Enter で改行、Enter で送信"></textarea>
+        <button class="send-btn" id="send-btn">送信</button>
+      </div>
+    </div>
+    <div class="chat-hint">
+      試してみる：
+      <span class="chip" onclick="fillChat(this)">T-Shirt を検索して</span>
+      <span class="chip" onclick="fillChat(this)">スウェットシャツの一覧を見せて</span>
+      <span class="chip" onclick="fillChat(this)">Sweatpants の M サイズをカートに入れてチェックアウトまで完了させて</span>
+      <span class="chip" onclick="fillChat(this)">Shorts を探して購入手続きをして</span>
+    </div>`;
+
+  const chatIn = document.getElementById("chat-in");
+  document.getElementById("send-btn").addEventListener("click", sendChat);
+  chatIn.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+  });
+  chatIn.addEventListener("input", () => autoResizeTextarea(chatIn));
+}
+
+function fillChat(chip) {
+  const input = document.getElementById("chat-in");
+  if (input) {
+    input.value = chip.textContent.trim();
+    autoResizeTextarea(input);
+    input.focus();
+  }
+}
+
+async function sendChat() {
+  const input   = document.getElementById("chat-in");
+  const sendBtn = document.getElementById("send-btn");
+  const msgs    = document.getElementById("chat-msgs");
+  const message = input.value.trim();
+  if (!message) return;
+
+  appendMsg(msgs, "user", esc(message).replace(/\n/g, "<br>"));
+  input.value = "";
+  autoResizeTextarea(input);
+  input.disabled   = true;
+  sendBtn.disabled = true;
+
+  const loadingId = "ld-" + Date.now();
+  appendMsg(msgs, "bot", "⏳ 考え中...", loadingId);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, history: chatHistory, buyerProfile: loadBuyerProfile() }),
+    });
+    const result = await res.json();
+
+    document.getElementById(loadingId)?.remove();
+
+    if (!result.ok) {
+      appendMsg(msgs, "sys", "エラー: " + esc(result.error));
+    } else {
+      chatHistory = result.history;
+      const log = buildToolLog(result.toolCallLog);
+      appendMsg(msgs, "bot", esc(result.text).replace(/\n/g, "<br>") + log);
+
+      // create_checkout が呼ばれ payment_handlers が返った場合、決済トークンを発行
+      if (hasPaymentHandler) {
+        const checkoutCall = result.toolCallLog?.find(
+          t => t.tool === "create_checkout" && !t.isError && t.output?.checkout?.payment_handlers,
+        );
+        if (checkoutCall) {
+          const registeredCard = _authSession?.cards?.[0] ?? null;
+          if (registeredCard) {
+            // 登録済みカードで自動トークン発行
+            await autoTokenizeWithCard(checkoutCall.output.id, registeredCard, msgs, input);
+          } else {
+            openPaymentModal(checkoutCall.output.id);
+          }
+        }
+      }
+
+      // AI が配送先情報を求めている場合、配送情報モーダルを表示
+      if (!shippingInfoSent && result.text) {
+        const shippingKws = ["住所", "配送先", "お名前", "氏名", "メールアドレス", "電話番号", "shipping address", "連絡先情報"];
+        const questionKws = ["教えて", "ください", "入力", "お知らせ", "必要", "提供", "教えていただ", "？", "?"];
+        const hasShipping = shippingKws.some(k => result.text.includes(k));
+        const hasQuestion = questionKws.some(k => result.text.includes(k));
+        if (hasShipping && hasQuestion) openShippingModal();
+      }
+    }
+  } catch (err) {
+    document.getElementById(loadingId)?.remove();
+    appendMsg(msgs, "sys", "通信エラー: " + esc(err.message));
+  } finally {
+    input.disabled   = false;
+    sendBtn.disabled = false;
+    msgs.scrollTop   = msgs.scrollHeight;
+    input.focus();
+  }
+}
+
+function buildToolLog(toolCallLog) {
+  if (!toolCallLog?.length) return "";
+  const line = toolCallLog.map(t =>
+    t.isError ? `❌ ${esc(t.tool)}` : `✓ ${esc(t.tool)}`
+  ).join(" → ");
+  let html = `<div class="tool-log">🔧 ${line}</div>`;
+  for (const t of toolCallLog.filter(t => t.isError)) {
+    const out = t.output ?? {};
+    const msg = out.detail
+      ? `${out.error ?? "error"}: ${out.detail}`
+      : JSON.stringify(out);
+    html += `<div class="tool-err-block">❌ <strong>${esc(t.tool)}</strong>: ${esc(msg)}</div>`;
+  }
+  return html;
+}
+
+function appendMsg(container, role, html, id) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  if (id) div.id = id;
+  div.innerHTML = `<div class="bubble">${html}</div>`;
+  container.appendChild(div);
+}
+
+/* ── Textarea auto-resize ────────────────────────────────────────────────────── */
+function autoResizeTextarea(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+}
+
+/* ── Auto-tokenize with registered card ─────────────────────────────────────── */
+
+async function autoTokenizeWithCard(checkoutId, card, msgs, input) {
+  const brandLabel = cardBrandLabel(card.brand);
+  appendMsg(msgs, "sys",
+    `💳 登録済みカード（${brandLabel} ···· ${esc(card.last_four)}）で決済トークンを自動発行しています…`
+  );
+  msgs.scrollTop = msgs.scrollHeight;
+  try {
+    const res = await fetch("/api/tokenize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: checkoutId, amount: 1000, currency: "jpy" }),
+    });
+    const data = await res.json();
+    if (data.ok && data.token) {
+      const mockNote  = data._mock ? "（モックモード）" : "";
+      const cardLabel = `${cardBrandLabel(card.brand)} ···· ${card.last_four}`;
+      appendMsg(msgs, "sys", `✅ 決済トークンを発行しました ${mockNote}`);
+      if (input) {
+        input.value = `決済トークンが発行されました（${cardLabel}）。以下の checkout_id と token で注文を確定してください。\ncheckout_id: ${checkoutId}\ntoken: ${data.token}`;
+        autoResizeTextarea(input);
+        input.focus();
+      }
+    } else {
+      appendMsg(msgs, "sys", `❌ 自動トークン発行に失敗: ${esc(data.error ?? "不明なエラー")}`);
+      openPaymentModal(checkoutId);
+    }
+  } catch (e) {
+    appendMsg(msgs, "sys", `❌ 自動トークン発行エラー: ${esc(e.message)}`);
+    openPaymentModal(checkoutId);
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+/* ── Payment Modal ───────────────────────────────────────────────────────────── */
+let modalIssuedToken = null;
+let modalCheckoutId  = null;
+let modalCardMeta    = null; // { brand, last_four } — 発行時に保持
+
+function openPaymentModal(checkoutId) {
+  modalCheckoutId  = checkoutId;
+  modalIssuedToken = null;
+  modalCardMeta    = null;
+  document.getElementById("modal-checkout-id").value    = checkoutId ?? "";
+  document.getElementById("modal-card-number").value    = "";
+  document.getElementById("modal-card-expiry").value    = "";
+  document.getElementById("modal-card-cvc").value       = "";
+  document.getElementById("modal-token-result").style.display = "none";
+  document.getElementById("modal-send-btn").style.display     = "none";
+  document.getElementById("payment-modal-overlay").style.display = "flex";
+  document.getElementById("modal-card-number").focus();
+}
+
+function closePaymentModal() {
+  document.getElementById("payment-modal-overlay").style.display = "none";
+}
+
+async function modalTokenizeCard() {
+  const btn      = document.getElementById("modal-tokenize-btn");
+  const resultEl = document.getElementById("modal-token-result");
+
+  const cardNumber = document.getElementById("modal-card-number").value.replace(/\s/g, "");
+  const expiry     = document.getElementById("modal-card-expiry").value;
+  const cvc        = document.getElementById("modal-card-cvc").value;
+
+  if (!cardNumber || !expiry || !cvc) {
+    showTokenResult(resultEl, false, "カード番号・有効期限・CVV をすべて入力してください。");
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = "⏳ トークン発行中...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/tokenize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: modalCheckoutId, amount: 1000, currency: "jpy" }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      showTokenResult(resultEl, false, `エラー: ${esc(data.error ?? "不明なエラー")}`);
+    } else {
+      modalIssuedToken = data.token;
+      // カード番号からブランドと下4桁を取得して保持
+      const rawNum = document.getElementById("modal-card-number").value.replace(/\s/g, "");
+      if (rawNum.length >= 4) {
+        const brand = detectModalBrand(rawNum);
+        modalCardMeta = { brand, last_four: rawNum.slice(-4) };
+      }
+      const mockNote = data._mock ? "（モックモード）" : "";
+      showTokenResult(resultEl, true, `✅ 決済トークンを発行しました ${mockNote}`, data.token);
+      document.getElementById("modal-send-btn").style.display = "block";
+    }
+  } catch (err) {
+    showTokenResult(resultEl, false, `通信エラー: ${esc(err.message)}`);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "💳 決済トークンを発行";
+  }
+}
+
+function detectModalBrand(digits) {
+  if (digits.startsWith("4")) return "visa";
+  if (/^5[1-5]/.test(digits) || /^2[2-7]/.test(digits)) return "mastercard";
+  if (/^3[47]/.test(digits)) return "amex";
+  if (/^6(?:011|5)/.test(digits)) return "discover";
+  return "unknown";
+}
+
+function modalSendToChat() {
+  if (!modalIssuedToken) return;
+  const input = document.getElementById("chat-in");
+  if (input) {
+    const cardSuffix = modalCardMeta
+      ? `（${cardBrandLabel(modalCardMeta.brand)} ···· ${modalCardMeta.last_four}）`
+      : "";
+    input.value = `決済トークンが発行されました${cardSuffix}。以下の checkout_id と token で注文を確定してください。\ncheckout_id: ${modalCheckoutId}\ntoken: ${modalIssuedToken}`;
+    autoResizeTextarea(input);
+    input.focus();
+  }
+  closePaymentModal();
+}
+
+/* ── Payment Tokenize (demo tab) ─────────────────────────────────────────────── */
+async function tokenizeCard() {
+  const btn        = document.getElementById("tokenize-btn");
+  const resultEl   = document.getElementById("token-result");
+  const checkoutId = document.getElementById("form-checkout-id").value || lastCheckoutId;
+
+  const cardNumber = document.getElementById("card-number").value.replace(/\s/g, "");
+  const expiry     = document.getElementById("card-expiry").value;
+  const cvc        = document.getElementById("card-cvc").value;
+
+  if (!cardNumber || !expiry || !cvc) {
+    showTokenResult(resultEl, false, "カード番号・有効期限・CVV をすべて入力してください。");
+    return;
+  }
+  if (!checkoutId) {
+    showTokenResult(resultEl, false, "先にデモを実行して checkout_id を取得してください。");
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = "⏳ トークン発行中...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/tokenize", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ checkout_id: checkoutId, amount: 1000, currency: "jpy" }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      showTokenResult(resultEl, false, `エラー: ${esc(data.error ?? "不明なエラー")}`);
+    } else {
+      const expLabel = data.expiry ? `有効期限: ${new Date(data.expiry).toLocaleString("ja-JP")}` : "";
+      const mockNote = data._mock ? "（モックモード）" : "";
+      showTokenResult(resultEl, true,
+        `✅ 決済トークンを発行しました ${mockNote}<br>${expLabel}`,
+        data.token,
+      );
+    }
+  } catch (err) {
+    showTokenResult(resultEl, false, `通信エラー: ${esc(err.message)}`);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "💳 決済トークンを発行";
+  }
+}
+
+function showTokenResult(el, ok, html, token) {
+  el.className = "token-result " + (ok ? "ok" : "err");
+  el.innerHTML = html + (token ? `<code>${esc(token)}</code>` : "");
+  el.style.display = "block";
+}
+
+/* ── Settings Modal ──────────────────────────────────────────────────────────── */
+function openSettingsModal() {
+  const p = loadBuyerProfile();
+  document.getElementById("s-first-name").value = p.first_name ?? "";
+  document.getElementById("s-last-name").value  = p.last_name  ?? "";
+  document.getElementById("s-email").value      = p.email      ?? "";
+  document.getElementById("s-phone").value      = p.phone      ?? "";
+  document.getElementById("s-postal").value     = p.postal     ?? "";
+  document.getElementById("s-city").value       = p.city       ?? "";
+  document.getElementById("s-address1").value   = p.address1   ?? "";
+  document.getElementById("s-address2").value   = p.address2   ?? "";
+  document.getElementById("s-province").value   = p.province   ?? "";
+  document.getElementById("s-country").value    = p.country    ?? "";
+  document.getElementById("settings-save-btn").textContent = "保存";
+  document.getElementById("settings-modal-overlay").style.display = "flex";
+}
+
+function closeSettingsModal() {
+  document.getElementById("settings-modal-overlay").style.display = "none";
+}
+
+function saveSettingsAndClose() {
+  const p = {
+    first_name: document.getElementById("s-first-name").value.trim(),
+    last_name:  document.getElementById("s-last-name").value.trim(),
+    email:      document.getElementById("s-email").value.trim(),
+    phone:      document.getElementById("s-phone").value.trim(),
+    postal:     document.getElementById("s-postal").value.trim(),
+    city:       document.getElementById("s-city").value.trim(),
+    address1:   document.getElementById("s-address1").value.trim(),
+    address2:   document.getElementById("s-address2").value.trim(),
+    province:   document.getElementById("s-province").value.trim(),
+    country:    document.getElementById("s-country").value.toUpperCase().trim(),
+  };
+  saveBuyerProfile(p);
+  updateSettingsBtnBadge();
+  const btn = document.getElementById("settings-save-btn");
+  btn.textContent = "✅ 保存しました";
+  setTimeout(() => closeSettingsModal(), 900);
+}
+
+/* ── Shipping Info Modal ─────────────────────────────────────────────────────── */
+function openShippingModal() {
+  const p = loadBuyerProfile();
+  document.getElementById("sh-first-name").value = p.first_name ?? "";
+  document.getElementById("sh-last-name").value  = p.last_name  ?? "";
+  document.getElementById("sh-email").value      = p.email      ?? "";
+  document.getElementById("sh-phone").value      = p.phone      ?? "";
+  document.getElementById("sh-postal").value     = p.postal     ?? "";
+  document.getElementById("sh-city").value       = p.city       ?? "";
+  document.getElementById("sh-address1").value   = p.address1   ?? "";
+  document.getElementById("sh-address2").value   = p.address2   ?? "";
+  document.getElementById("sh-province").value   = p.province   ?? "";
+  document.getElementById("sh-country").value    = p.country    ?? "";
+  document.getElementById("shipping-modal-overlay").style.display = "flex";
+}
+
+function closeShippingModal() {
+  document.getElementById("shipping-modal-overlay").style.display = "none";
+}
+
+function sendShippingInfo() {
+  const firstName = document.getElementById("sh-first-name").value.trim();
+  const lastName  = document.getElementById("sh-last-name").value.trim();
+  const email     = document.getElementById("sh-email").value.trim();
+  const phone     = document.getElementById("sh-phone").value.trim();
+  const postal    = document.getElementById("sh-postal").value.trim();
+  const address1  = document.getElementById("sh-address1").value.trim();
+  const address2  = document.getElementById("sh-address2").value.trim();
+  const city      = document.getElementById("sh-city").value.trim();
+  const province  = document.getElementById("sh-province").value.trim();
+  const country   = document.getElementById("sh-country").value.toUpperCase().trim();
+
+  const parts = ["以下の配送先・連絡先情報を使用してください："];
+  if (firstName || lastName) parts.push(`氏名: ${[firstName, lastName].filter(Boolean).join(" ")}`);
+  if (email)    parts.push(`メール: ${email}`);
+  if (phone)    parts.push(`電話番号: ${phone}`);
+  if (address1) parts.push(`住所1: ${address1}`);
+  if (address2) parts.push(`住所2: ${address2}`);
+  if (city)     parts.push(`市区町村: ${city}`);
+  if (province) parts.push(`都道府県: ${province}`);
+  if (postal)   parts.push(`郵便番号: ${postal}`);
+  if (country)  parts.push(`国コード: ${country}`);
+
+  if (parts.length > 1) {
+    const input = document.getElementById("chat-in");
+    if (input) {
+      input.value = parts.join("\n");
+      autoResizeTextarea(input);
+      input.focus();
+    }
+  }
+  closeShippingModal();
+  shippingInfoSent = true;
+}
+
+/* ── AP2 HNP ─────────────────────────────────────────────────────────────────── */
+
+function updateAp2SessionBadge() {
+  const badge = document.getElementById("ap2-session-badge");
+  if (!badge) return;
+  if (ap2SessionActive) {
+    badge.textContent = "✅ 委任済み";
+    badge.className = "ap2-session-badge active";
+  } else {
+    badge.textContent = "未委任";
+    badge.className = "ap2-session-badge inactive";
+  }
+  // AP2 settings badges
+  const p = loadBuyerProfile();
+  const hasData = !!(p.first_name || p.email || p.address1);
+  const ap2Badge   = document.getElementById("ap2-settings-profile-badge");
+  const ap2hpBadge = document.getElementById("ap2hp-settings-profile-badge");
+  if (ap2Badge)   ap2Badge.style.display   = hasData ? "inline" : "none";
+  if (ap2hpBadge) ap2hpBadge.style.display = hasData ? "inline" : "none";
+}
+
+/* ── DC API ウォレット連携 ──────────────────────────────────────────────────── */
+
+/**
+ * Digital Credentials API でウォレットから委任クレデンシャルを取得する。
+ * - /api/ap2/dc-request で DCQL・transaction_data（delegate 型）をサーバーが生成
+ * - navigator.credentials.get() で CMWallet を起動
+ * @returns {{ vpToken: any, nonce: string|null, error: string|null }}
+ */
+async function tryDcApiPresentation(intentParams = {}) {
+  try {
+    const qs = new URLSearchParams({
+      ...(intentParams.maxAmount    != null ? { max_amount:    intentParams.maxAmount }    : {}),
+      ...(intentParams.merchantId           ? { merchant_id:   intentParams.merchantId }   : {}),
+      ...(intentParams.merchantName         ? { merchant_name: intentParams.merchantName } : {}),
+    }).toString();
+
+    const dcRes = await fetch("/api/ap2/dc-request" + (qs ? "?" + qs : ""));
+    if (!dcRes.ok) {
+      const err = await dcRes.json().catch(() => ({}));
+      return { vpToken: null, nonce: null, error: err.error ?? "DC request 失敗" };
+    }
+    const { nonce, dcql_query, transaction_data } = await dcRes.json();
+
+    if (!navigator.credentials || typeof navigator.credentials.get !== "function") {
+      return { vpToken: null, nonce, error: "Digital Credentials API が利用できません（Chrome on Android が必要です）" };
+    }
+
+    let credential;
+    try {
+      credential = await navigator.credentials.get({
+        digital: {
+          requests: [{
+            protocol: "openid4vp-v1-unsigned",
+            data: { nonce, dcql_query, transaction_data },
+          }],
+        },
+      });
+    } catch (e) {
+      return { vpToken: null, nonce, error: `DC API エラー: ${e.message}` };
+    }
+
+    if (!credential?.data) {
+      return { vpToken: null, nonce, error: "クレデンシャルが返されませんでした" };
+    }
+
+    let data;
+    try {
+      data = typeof credential.data === "string" ? JSON.parse(credential.data) : credential.data;
+    } catch {
+      data = {};
+    }
+    const vpToken = data.vp_token ?? null;
+
+    return { vpToken, nonce, error: vpToken ? null : "vp_token が返されませんでした" };
+  } catch (e) {
+    return { vpToken: null, nonce: null, error: e.message };
+  }
+}
+
+function buildVpTokenBlock(vpToken) {
+  if (!vpToken) return "";
+  const isJwt = typeof vpToken === "string" && vpToken.split(".").length === 3;
+  let detailHtml = "";
+  if (isJwt) {
+    const payload = decodeJwtPayload(vpToken);
+    const payloadHtml = payload
+      ? `<div class="mandate-payload">${esc(JSON.stringify(payload, null, 2))}</div>`
+      : "";
+    detailHtml = `
+      <div class="mandate-section">
+        <div class="mandate-section-title">vp_token (SD-JWT)</div>
+        <div class="mandate-jwt">${esc(vpToken)}</div>
+        ${payloadHtml}
+      </div>`;
+  } else {
+    // mso_mdoc: CBOR-encoded base64url — show raw value, no JWT decode
+    const raw = typeof vpToken === "string" ? vpToken : JSON.stringify(vpToken);
+    detailHtml = `
+      <div class="mandate-section">
+        <div class="mandate-section-title">vp_token (mso_mdoc / CBOR)</div>
+        <div class="mandate-jwt" style="word-break:break-all">${esc(raw)}</div>
+        <div class="dc-api-unsupported" style="margin-top:0.3rem">CBOR エンコード済みデータのためブラウザ上でのデコード表示は省略</div>
+      </div>`;
+  }
+  return `
+    <details class="mandate-block" open>
+      <summary>🪪 DC API vp_token（ウォレット提示）</summary>
+      ${detailHtml}
+    </details>`;
+}
+
+async function initAp2Session() {
+  const btn      = document.getElementById("ap2-init-btn");
+  const resultEl = document.getElementById("ap2-init-result");
+
+  const maxAmount    = parseInt(document.getElementById("ap2-max-amount").value || "50000", 10);
+  const instrumentId = document.getElementById("ap2-instrument").value;
+  const merchantId   = document.getElementById("ap2-merchant-id").value.trim() || "merchant_1";
+  const merchantName = document.getElementById("ap2-merchant-name").value.trim() || "Demo Merchant";
+
+  btn.disabled    = true;
+  resultEl.style.display = "none";
+
+  // ── Step 1: Digital Credentials API でウォレット連携 ──────────────────────
+  // DCQL・transaction_data（delegate 型）はサーバーが生成。
+  btn.textContent = "⏳ ウォレット連携中...";
+  const dcResult = await tryDcApiPresentation({ maxAmount, merchantId, merchantName });
+  const vpToken  = dcResult.vpToken ?? null;
+  const nonce    = dcResult.nonce   ?? null;
+
+  // DC API ステップの状態 HTML（後で init 結果と合わせて表示）
+  let dcApiHtml = "";
+  if (dcResult.error) {
+    dcApiHtml = `<div class="dc-api-step"><div class="dc-api-step-title">🪪 Digital Credentials API</div><div class="dc-api-unsupported">⚠️ ${esc(dcResult.error)}（Open Mandate はサーバー側で発行）</div></div>`;
+  } else if (vpToken) {
+    dcApiHtml = buildVpTokenBlock(vpToken);
+  }
+
+  // ── Step 2: Open Mandate 発行 ──────────────────────────────────────────────
+  btn.textContent = "⏳ 委任状を発行中...";
+
+  try {
+    const res = await fetch("/api/ap2/init", {
+      method:  "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: {
+          merchants: [{ id: merchantId, name: merchantName, website: "http://localhost:9000" }],
+          items:     [{ id: "prod_abc", title: "Shopping Item", quantity: 1 }],
+          amount_range: { max: maxAmount, min: 0, currency: "JPY" },
+          payment_instrument_id: instrumentId,
+        },
+        vp_token: vpToken,
+        nonce,
+      }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      resultEl.className = "ap2-init-result err";
+      resultEl.textContent = `エラー: ${esc(data.error ?? "不明なエラー")}`;
+      resultEl.style.display = "block";
+    } else {
+      ap2OpenPaymentMandate  = data.open_payment_mandate  ?? null;
+      ap2OpenCheckoutMandate = data.open_checkout_mandate ?? null;
+      const expiry = data.expires_at ? new Date(data.expires_at).toLocaleString("ja-JP") : "";
+      const mandateHtml = buildMandateBlock("Open Mandate（委任状）", [
+        ["Open Payment Mandate",  ap2OpenPaymentMandate],
+        ["Open Checkout Mandate", ap2OpenCheckoutMandate],
+      ]);
+      resultEl.className = "ap2-init-result ok";
+      resultEl.innerHTML = `✅ Open Mandate を発行しました（有効期限: ${esc(expiry)}）<br>エージェントに購入を依頼してください。${dcApiHtml}${mandateHtml}`;
+      resultEl.style.display = "block";
+      ap2SessionActive = true;
+      ap2ChatHistory   = [];
+      ap2ShippingInfoSent = false;
+      updateAp2SessionBadge();
+      renderAp2ChatArea();
+      document.getElementById("ap2-intent-form").style.opacity = "0.5";
+      document.getElementById("ap2-intent-form").style.pointerEvents = "none";
+    }
+  } catch (err) {
+    resultEl.className = "ap2-init-result err";
+    resultEl.textContent = `通信エラー: ${esc(err.message)}`;
+    resultEl.style.display = "block";
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = ap2SessionActive ? "🔄 再委任" : "🔑 委任を開始";
+    if (ap2SessionActive) {
+      document.getElementById("ap2-intent-form").style.opacity = "";
+      document.getElementById("ap2-intent-form").style.pointerEvents = "";
+    }
+  }
+}
+
+function renderAp2ChatArea() {
+  const area = document.getElementById("ap2-chat-area");
+  if (!area) return;
+
+  if (!hasApiKey) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ GOOGLE_AI_STUDIO_API_KEY が設定されていません</h3>
+        <p>AP2 HNP チャットを使うには <code>GOOGLE_AI_STUDIO_API_KEY</code> を設定してください。</p>
+      </div>`;
+    return;
+  }
+
+  if (!hasTrustedSurface) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ TRUSTED_SURFACE_URL が設定されていません</h3>
+        <p>AP2 HNP フローを使うには <code>TRUSTED_SURFACE_URL=http://localhost:3300</code> を <code>c-ai-agent-app/.env</code> に追加してください。</p>
+        <p style="margin-top:.5rem">また <code>e-trusted_surface-wallet</code> を起動してください。</p>
+      </div>`;
+    return;
+  }
+
+  if (!ap2SessionActive) {
+    area.innerHTML = `
+      <div class="chat-notice" style="background:#f0f4ff;border-color:#c7d7f8;color:#3050a0">
+        <h3>🔑 まず委任を開始してください</h3>
+        <p>上の「AP2 前授権」パネルで「委任を開始」ボタンを押すと、エージェントへの委任状が発行されます。</p>
+      </div>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="chat-wrap">
+      <div class="chat-messages" id="ap2-chat-msgs">
+        <div class="msg sys"><div class="bubble">
+          AP2 HNP モードで起動しました。<br>
+          Open Mandate（委任状）が発行済みです。購入したい商品をお伝えください。
+        </div></div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="ap2-chat-in" rows="1" placeholder="例：ランニングシューズを買って&#10;Shift+Enter で改行、Enter で送信"></textarea>
+        <button class="send-btn" id="ap2-send-btn">送信</button>
+      </div>
+    </div>
+    <div class="chat-hint">
+      試してみる：
+      <span class="chip" onclick="fillAp2Chat(this)">Tシャツの黒 M サイズを購入して</span>
+      <span class="chip" onclick="fillAp2Chat(this)">スウェットシャツ の L サイズをチェックアウトまで完了して</span>
+      <span class="chip" onclick="fillAp2Chat(this)">短パンを探して購入して</span>
+    </div>`;
+
+  const input = document.getElementById("ap2-chat-in");
+  document.getElementById("ap2-send-btn").addEventListener("click", sendAp2Chat);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAp2Chat(); }
+  });
+  input.addEventListener("input", () => autoResizeTextarea(input));
+}
+
+function fillAp2Chat(chip) {
+  const input = document.getElementById("ap2-chat-in");
+  if (input) { input.value = chip.textContent.trim(); autoResizeTextarea(input); input.focus(); }
+}
+
+async function sendAp2Chat() {
+  const input   = document.getElementById("ap2-chat-in");
+  const sendBtn = document.getElementById("ap2-send-btn");
+  const msgs    = document.getElementById("ap2-chat-msgs");
+  const message = input?.value.trim();
+  if (!message || !msgs) return;
+
+  appendMsg(msgs, "user", esc(message).replace(/\n/g, "<br>"));
+  input.value = "";
+  autoResizeTextarea(input);
+  input.disabled   = true;
+  sendBtn.disabled = true;
+
+  const loadingId = "ap2ld-" + Date.now();
+  appendMsg(msgs, "bot", "⏳ 考え中...", loadingId);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const res = await fetch("/api/chat-ap2", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, history: ap2ChatHistory, buyerProfile: loadBuyerProfile() }),
+    });
+    const result = await res.json();
+    document.getElementById(loadingId)?.remove();
+
+    if (!result.ok) {
+      appendMsg(msgs, "sys", "エラー: " + esc(result.error));
+    } else {
+      ap2ChatHistory = result.history;
+
+      // AP2 credential 自動発行ログを目立たせる
+      const credLog    = result.toolCallLog?.find(t => t.tool === "AP2 /credential（自動発行）" && !t.isError);
+      const regularLog = result.toolCallLog?.filter(t => t.tool !== "AP2 /credential（自動発行）") ?? [];
+      let logHtml = buildToolLog(regularLog);
+      if (credLog) {
+        logHtml += `<div class="ap2-cred-log">🔐 AP2 Credential 自動発行: ${esc(credLog.output?.token?.slice(0,20) ?? "")}...</div>`;
+      }
+
+      // 決済完了時: complete_checkout 成功 + _display データがあればマンデートを表示
+      const completeCall = result.toolCallLog?.find(t => t.tool === "complete_checkout" && !t.isError);
+      const display = credLog?.output?._display;
+      if (completeCall && display) {
+        logHtml += buildMandateBlock("決済完了 Mandate 詳細", [
+          ["Checkout JWT",            display.checkout_jwt],
+          ["Open Payment Mandate",    display.open_payment_mandate],
+          ["Closed Payment Mandate",  display.closed_payment_mandate],
+          ["Open Checkout Mandate",   display.open_checkout_mandate],
+        ]);
+      }
+
+      appendMsg(msgs, "bot", esc(result.text).replace(/\n/g, "<br>") + logHtml);
+
+      // 配送先情報が求められていたらモーダルを表示
+      if (!ap2ShippingInfoSent && result.text) {
+        const shippingKws = ["住所", "配送先", "お名前", "氏名", "メールアドレス", "連絡先"];
+        const questionKws = ["教えて", "ください", "入力", "必要", "？", "?"];
+        const hasShipping = shippingKws.some(k => result.text.includes(k));
+        const hasQuestion = questionKws.some(k => result.text.includes(k));
+        if (hasShipping && hasQuestion) {
+          openAp2ShippingModal();
+        }
+      }
+    }
+  } catch (err) {
+    document.getElementById(loadingId)?.remove();
+    appendMsg(msgs, "sys", "通信エラー: " + esc(err.message));
+  } finally {
+    if (input)   { input.disabled   = false; input.focus(); }
+    if (sendBtn) sendBtn.disabled = false;
+    if (msgs)    msgs.scrollTop   = msgs.scrollHeight;
+  }
+}
+
+function openAp2ShippingModal() {
+  openShippingModal();
+  // sendShippingInfo の送信先を ap2-chat-in に向ける（既存の shipping modal を再利用）
+  const sendBtn = document.getElementById("shipping-send-btn");
+  const newBtn  = sendBtn.cloneNode(true);
+  sendBtn.parentNode.replaceChild(newBtn, sendBtn);
+  newBtn.addEventListener("click", () => {
+    sendAp2ShippingInfo();
+  });
+}
+
+function sendAp2ShippingInfo() {
+  const vals = {
+    firstName: document.getElementById("sh-first-name").value.trim(),
+    lastName:  document.getElementById("sh-last-name").value.trim(),
+    email:     document.getElementById("sh-email").value.trim(),
+    phone:     document.getElementById("sh-phone").value.trim(),
+    address1:  document.getElementById("sh-address1").value.trim(),
+    address2:  document.getElementById("sh-address2").value.trim(),
+    city:      document.getElementById("sh-city").value.trim(),
+    province:  document.getElementById("sh-province").value.trim(),
+    postal:    document.getElementById("sh-postal").value.trim(),
+    country:   document.getElementById("sh-country").value.toUpperCase().trim(),
+  };
+  const parts = ["以下の配送先・連絡先情報を使用してください："];
+  if (vals.firstName || vals.lastName) parts.push(`氏名: ${[vals.firstName, vals.lastName].filter(Boolean).join(" ")}`);
+  if (vals.email)    parts.push(`メール: ${vals.email}`);
+  if (vals.phone)    parts.push(`電話番号: ${vals.phone}`);
+  if (vals.address1) parts.push(`住所1: ${vals.address1}`);
+  if (vals.address2) parts.push(`住所2: ${vals.address2}`);
+  if (vals.city)     parts.push(`市区町村: ${vals.city}`);
+  if (vals.province) parts.push(`都道府県: ${vals.province}`);
+  if (vals.postal)   parts.push(`郵便番号: ${vals.postal}`);
+  if (vals.country)  parts.push(`国コード: ${vals.country}`);
+
+  if (parts.length > 1) {
+    const input = document.getElementById("ap2-chat-in");
+    if (input) { input.value = parts.join("\n"); autoResizeTextarea(input); input.focus(); }
+  }
+  closeShippingModal();
+  ap2ShippingInfoSent = true;
+  // shipping-send-btn を元に戻す
+  const newBtn = document.getElementById("shipping-send-btn");
+  if (newBtn) {
+    const orig = newBtn.cloneNode(true);
+    newBtn.parentNode.replaceChild(orig, newBtn);
+    orig.addEventListener("click", sendShippingInfo);
+  }
+}
+
+/* ── AP2 HP ──────────────────────────────────────────────────────────────────── */
+
+async function initAp2HpSession() {
+  const btn      = document.getElementById("ap2hp-config-btn");
+  const resultEl = document.getElementById("ap2hp-config-result");
+
+  const instrumentId = document.getElementById("ap2hp-instrument").value;
+  const maxAmount    = parseInt(document.getElementById("ap2hp-max-amount").value || "50000", 10);
+  const merchantId   = document.getElementById("ap2hp-merchant-id").value.trim()   || "merchant_1";
+  const merchantName = document.getElementById("ap2hp-merchant-name").value.trim() || "Demo Merchant";
+
+  btn.disabled    = true;
+  btn.textContent = "⏳ 設定中...";
+  resultEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/ap2-hp/init", {
+      method:  "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instrument_id: instrumentId, merchant_id: merchantId, merchant_name: merchantName, max_amount: maxAmount }),
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      resultEl.className = "ap2-init-result err";
+      resultEl.textContent = `エラー: ${esc(data.error ?? "不明なエラー")}`;
+      resultEl.style.display = "block";
+    } else {
+      ap2HpChatHistory      = [];
+      ap2HpShippingInfoSent = false;
+      resultEl.className = "ap2-init-result ok";
+      resultEl.textContent = `✅ 設定を反映しました（${esc(merchantName)} / ${instrumentId} / ¥${maxAmount.toLocaleString()}）`;
+      resultEl.style.display = "block";
+      renderAp2HpChatArea();
+      // 設定パネルを閉じる
+      const details = document.getElementById("ap2hp-config-details");
+      if (details) details.open = false;
+    }
+  } catch (err) {
+    resultEl.className = "ap2-init-result err";
+    resultEl.textContent = `通信エラー: ${esc(err.message)}`;
+    resultEl.style.display = "block";
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "⚙️ 設定を反映してチャットをリセット";
+  }
+}
+
+function renderAp2HpChatArea() {
+  const area = document.getElementById("ap2hp-chat-area");
+  if (!area) return;
+
+  if (!hasApiKey) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ GOOGLE_AI_STUDIO_API_KEY が設定されていません</h3>
+        <p>AP2 HP チャットを使うには <code>GOOGLE_AI_STUDIO_API_KEY</code> を設定してください。</p>
+      </div>`;
+    return;
+  }
+
+  if (!ap2HpAvailable) {
+    area.innerHTML = `
+      <div class="chat-notice">
+        <h3>⚠️ TRUSTED_SURFACE_URL または PAYMENT_HANDLER_URL が設定されていません</h3>
+        <p>AP2 HP フローには両方の設定が必要です。<code>c-ai-agent-app/.env</code> を確認してください。</p>
+      </div>`;
+    return;
+  }
+
+  area.innerHTML = `
+    <div class="chat-wrap">
+      <div class="chat-messages" id="ap2hp-chat-msgs">
+        <div class="msg sys"><div class="bubble">
+          AP2 HP モードで起動しました。<br>
+          購入したい商品をお伝えください。チェックアウト時に Trusted Surface が自動で決済認可を行います。
+        </div></div>
+      </div>
+      <div class="chat-input-row">
+        <textarea id="ap2hp-chat-in" rows="1" placeholder="例：ランニングシューズを買って&#10;Shift+Enter で改行、Enter で送信"></textarea>
+        <button class="send-btn" id="ap2hp-send-btn">送信</button>
+      </div>
+    </div>
+    <div class="chat-hint">
+      試してみる：
+      <span class="chip" onclick="fillAp2HpChat(this)">T白 S サイズを購入して</span>
+      <span class="chip" onclick="fillAp2HpChat(this)">Sweatpants の M サイズをチェックアウトまで完了して</span>
+      <span class="chip" onclick="fillAp2HpChat(this)">Shorts を探して購入手続きをして</span>
+    </div>`;
+
+  const input = document.getElementById("ap2hp-chat-in");
+  document.getElementById("ap2hp-send-btn").addEventListener("click", sendAp2HpChat);
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAp2HpChat(); }
+  });
+  input.addEventListener("input", () => autoResizeTextarea(input));
+}
+
+function fillAp2HpChat(chip) {
+  const input = document.getElementById("ap2hp-chat-in");
+  if (input) { input.value = chip.textContent.trim(); autoResizeTextarea(input); input.focus(); }
+}
+
+async function sendAp2HpChat() {
+  const input   = document.getElementById("ap2hp-chat-in");
+  const sendBtn = document.getElementById("ap2hp-send-btn");
+  const msgs    = document.getElementById("ap2hp-chat-msgs");
+  const message = input?.value.trim();
+  if (!message || !msgs) return;
+
+  appendMsg(msgs, "user", esc(message).replace(/\n/g, "<br>"));
+  input.value = "";
+  autoResizeTextarea(input);
+  input.disabled   = true;
+  sendBtn.disabled = true;
+
+  const loadingId = "ap2hpld-" + Date.now();
+  appendMsg(msgs, "bot", "⏳ 考え中...", loadingId);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const res = await fetch("/api/chat-ap2-hp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message, history: ap2HpChatHistory, buyerProfile: loadBuyerProfile() }),
+    });
+    const result = await res.json();
+    document.getElementById(loadingId)?.remove();
+
+    if (!result.ok) {
+      appendMsg(msgs, "sys", "エラー: " + esc(result.error));
+    } else {
+      ap2HpChatHistory = result.history;
+
+      const dcParamsLog = result.toolCallLog?.find(t => t.tool === "AP2 HP DC API パラメータ生成");
+      const regularLog  = result.toolCallLog?.filter(t => t.tool !== "AP2 HP DC API パラメータ生成") ?? [];
+      let logHtml = buildToolLog(regularLog);
+
+      const completeCall = result.toolCallLog?.find(t => t.tool === "complete_checkout" && !t.isError);
+      if (completeCall && dcParamsLog?.output?.checkout_jwt) {
+        logHtml += buildMandateBlock("決済完了 Mandate 詳細（HP DC API）", [
+          ["Checkout JWT", dcParamsLog.output.checkout_jwt],
+        ]);
+      }
+
+      let mainHtml = esc(result.text).replace(/\n/g, "<br>") + logHtml;
+
+      // DC API 承認ボタンを追加（create_checkout が _ap2_dc_params を返した場合）
+      if (result._ap2_dc_params) {
+        const dcParams = result._ap2_dc_params;
+        const btnId = "hp-dc-btn-" + Date.now();
+        mainHtml += `
+          <div class="dc-api-step" style="margin-top:0.8rem">
+            <div class="dc-api-step-title">🪪 Digital Credentials API 承認待ち</div>
+            <p style="font-size:0.85rem;margin:0.4rem 0">スマートフォン（Android / CMWallet）で支払い内容を確認・承認してください。</p>
+            <button class="send-btn" id="${btnId}" style="margin-top:0.4rem">
+              📱 DC API で承認する
+            </button>
+            <div id="${btnId}-status" style="margin-top:0.4rem;font-size:0.82rem"></div>
+            ${buildDcApiRequestBlock(dcParams)}
+          </div>`;
+        // ボタンのクリックハンドラは appendMsg 後に設定する
+        setTimeout(() => {
+          const btn = document.getElementById(btnId);
+          if (btn) btn.addEventListener("click", () => handleHpDcApi(dcParams, btnId, msgs));
+        }, 0);
+      }
+
+      appendMsg(msgs, "bot", mainHtml);
+
+      if (!ap2HpShippingInfoSent && result.text) {
+        const shippingKws = ["住所", "配送先", "お名前", "氏名", "メールアドレス", "連絡先"];
+        const questionKws = ["教えて", "ください", "入力", "必要", "？", "?"];
+        const hasShipping = shippingKws.some(k => result.text.includes(k));
+        const hasQuestion = questionKws.some(k => result.text.includes(k));
+        if (hasShipping && hasQuestion) openAp2HpShippingModal();
+      }
+    }
+  } catch (err) {
+    document.getElementById(loadingId)?.remove();
+    appendMsg(msgs, "sys", "通信エラー: " + esc(err.message));
+  } finally {
+    if (input)   { input.disabled   = false; input.focus(); }
+    if (sendBtn) sendBtn.disabled = false;
+    if (msgs)    msgs.scrollTop   = msgs.scrollHeight;
+  }
+}
+
+function openAp2HpShippingModal() {
+  openShippingModal();
+  const sendBtn = document.getElementById("shipping-send-btn");
+  const newBtn  = sendBtn.cloneNode(true);
+  sendBtn.parentNode.replaceChild(newBtn, sendBtn);
+  newBtn.addEventListener("click", () => {
+    sendAp2HpShippingInfo();
+  });
+}
+
+/**
+ * AP2 HP フロー: DC API を発火してウォレットから VP Token を取得し、
+ * /api/ap2-hp/dc-response に送信して payment token を発行する。
+ * 成功したらチャット履歴の create_checkout レスポンスに ap2_credential を注入し、
+ * 「承認が完了しました」メッセージで AI に続行させる。
+ */
+async function handleHpDcApi(dcParams, btnId, msgs) {
+  const btn       = document.getElementById(btnId);
+  const statusEl  = document.getElementById(btnId + "-status");
+  if (!btn || !dcParams) return;
+
+  btn.disabled   = true;
+  btn.textContent = "⏳ ウォレット連携中...";
+  if (statusEl) statusEl.textContent = "";
+
+  // ── Step 1: DC API でウォレットから VP Token を取得 ──────────────────────────
+  let vpToken = null;
+  try {
+    if (!navigator.credentials || typeof navigator.credentials.get !== "function") {
+      throw new Error("Digital Credentials API が利用できません（Android Chrome が必要です）");
+    }
+    const credential = await navigator.credentials.get({
+      digital: {
+        requests: [{
+          protocol: "openid4vp-v1-unsigned",
+          data: {
+            nonce:            dcParams.nonce,
+            response_mode:    dcParams.response_mode,
+            dcql_query:       dcParams.dcql_query,
+            transaction_data: dcParams.transaction_data,
+          },
+        }],
+      },
+    });
+    if (!credential?.data) throw new Error("クレデンシャルが返されませんでした");
+    const data = typeof credential.data === "string" ? JSON.parse(credential.data) : credential.data;
+    vpToken = data.vp_token ?? null;
+    if (!vpToken) throw new Error("vp_token が返されませんでした");
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "📱 DC API で承認する"; }
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ DC API エラー: ${esc(e.message)}</span>`;
+    return;
+  }
+
+  if (btn) btn.textContent = "⏳ クレデンシャル発行中...";
+
+  // ── Step 2: VP Token をサーバーに送り payment token を発行 ──────────────────
+  let credResult;
+  try {
+    const res = await fetch("/api/ap2-hp/dc-response", {
+      method:  "POST",
+      headers: { "content-type": "application/json" },
+      body:    JSON.stringify({ vp_token: vpToken, nonce: dcParams.nonce }),
+    });
+    credResult = await res.json();
+    if (!credResult.ok) throw new Error(credResult.error ?? "credential 発行失敗");
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = "📱 DC API で承認する"; }
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ Credential 発行エラー: ${esc(e.message)}</span>`;
+    return;
+  }
+
+  // ── Step 3: チャット履歴の update_checkout レスポンスに ap2_credential を注入 ─
+  // （DC API は update_checkout 後に発火するため、update_checkout のレスポンスに注入する）
+  const { token, ap2_checkout_mandate, checkout_id } = credResult;
+  let injected = false;
+  for (let i = ap2HpChatHistory.length - 1; i >= 0; i--) {
+    const turn = ap2HpChatHistory[i];
+    // Gemini SDK stores functionResponse turns with role:"function" (not "user")
+    if ((turn.role === "user" || turn.role === "function") && Array.isArray(turn.parts)) {
+      for (const part of turn.parts) {
+        if (part.functionResponse?.name === "update_checkout") {
+          part.functionResponse.response = {
+            ...part.functionResponse.response,
+            ap2_credential:      { token, expiry: credResult.expiry, transaction_id: credResult.transaction_id },
+            ap2_checkout_mandate: ap2_checkout_mandate ?? null,
+          };
+          injected = true;
+          break;
+        }
+      }
+      if (injected) break;
+    }
+  }
+
+  if (!injected) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--red)">❌ チャット履歴への注入に失敗しました</span>`;
+    return;
+  }
+
+  if (btn) btn.textContent = "✅ 承認完了";
+  if (statusEl) {
+    statusEl.innerHTML = `<span style="color:var(--green)">✅ token: ${esc(token.slice(0,24))}...</span>
+      ${buildDcApiResponseBlock(vpToken)}`;
+  }
+
+  // ── Step 4: AI に続行を促す ──────────────────────────────────────────────────
+  const input = document.getElementById("ap2hp-chat-in");
+  if (input) {
+    input.value = "支払い承認が完了しました。complete_checkout を実行してください。";
+    autoResizeTextarea(input);
+    input.focus();
+  }
+  if (msgs) msgs.scrollTop = msgs.scrollHeight;
+}
+
+function sendAp2HpShippingInfo() {
+  const vals = {
+    firstName: document.getElementById("sh-first-name").value.trim(),
+    lastName:  document.getElementById("sh-last-name").value.trim(),
+    email:     document.getElementById("sh-email").value.trim(),
+    phone:     document.getElementById("sh-phone").value.trim(),
+    address1:  document.getElementById("sh-address1").value.trim(),
+    address2:  document.getElementById("sh-address2").value.trim(),
+    city:      document.getElementById("sh-city").value.trim(),
+    province:  document.getElementById("sh-province").value.trim(),
+    postal:    document.getElementById("sh-postal").value.trim(),
+    country:   document.getElementById("sh-country").value.toUpperCase().trim(),
+  };
+  const parts = ["以下の配送先・連絡先情報を使用してください："];
+  if (vals.firstName || vals.lastName) parts.push(`氏名: ${[vals.firstName, vals.lastName].filter(Boolean).join(" ")}`);
+  if (vals.email)    parts.push(`メール: ${vals.email}`);
+  if (vals.phone)    parts.push(`電話番号: ${vals.phone}`);
+  if (vals.address1) parts.push(`住所1: ${vals.address1}`);
+  if (vals.address2) parts.push(`住所2: ${vals.address2}`);
+  if (vals.city)     parts.push(`市区町村: ${vals.city}`);
+  if (vals.province) parts.push(`都道府県: ${vals.province}`);
+  if (vals.postal)   parts.push(`郵便番号: ${vals.postal}`);
+  if (vals.country)  parts.push(`国コード: ${vals.country}`);
+
+  if (parts.length > 1) {
+    const input = document.getElementById("ap2hp-chat-in");
+    if (input) { input.value = parts.join("\n"); autoResizeTextarea(input); input.focus(); }
+  }
+  closeShippingModal();
+  ap2HpShippingInfoSent = true;
+  const newBtn = document.getElementById("shipping-send-btn");
+  if (newBtn) {
+    const orig = newBtn.cloneNode(true);
+    newBtn.parentNode.replaceChild(orig, newBtn);
+    orig.addEventListener("click", sendShippingInfo);
+  }
+}
+
+/* ── Mandate display helpers ──────────────────────────────────────────────────── */
+function decodeJwtPayload(token) {
+  try {
+    const parts = (token ?? "").split(".");
+    if (parts.length < 2) return null;
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(b64.padEnd(b64.length + (4 - b64.length % 4) % 4, "="));
+    return JSON.parse(json);
+  } catch { return null; }
+}
+
+function buildMandateSection(title, jwtToken) {
+  if (!jwtToken) return "";
+  const payload = decodeJwtPayload(jwtToken);
+  const payloadHtml = payload
+    ? `<div class="mandate-payload">${esc(JSON.stringify(payload, null, 2))}</div>`
+    : "";
+  return `
+    <div class="mandate-section">
+      <div class="mandate-section-title">${esc(title)}</div>
+      <div class="mandate-jwt">${esc(jwtToken)}</div>
+      ${payloadHtml}
+    </div>`;
+}
+
+function buildMandateBlock(title, sections) {
+  const inner = sections.map(([t, jwt]) => buildMandateSection(t, jwt)).join("");
+  if (!inner) return "";
+  return `<details class="mandate-block"><summary>🔐 ${esc(title)}</summary>${inner}</details>`;
+}
+
+/* ── Copy helper ─────────────────────────────────────────────────────────────── */
+function copyText(text, btnEl) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (!btnEl) return;
+    const orig = btnEl.textContent;
+    btnEl.textContent = "✓ コピー済";
+    setTimeout(() => { btnEl.textContent = orig; }, 1500);
+  }).catch(() => {});
+}
+
+/* ── DC API request block ────────────────────────────────────────────────────── */
+function buildDcApiRequestBlock(dcParams) {
+  if (!dcParams) return "";
+  const requestData = {
+    nonce:            dcParams.nonce,
+    response_mode:    dcParams.response_mode,
+    dcql_query:       dcParams.dcql_query,
+    transaction_data: dcParams.transaction_data,
+  };
+  const requestJson = JSON.stringify(requestData, null, 2);
+
+  let decodedTdHtml = "";
+  try {
+    const td = dcParams.transaction_data?.[0];
+    if (td) {
+      const b64 = td.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((td.length + 3) % 4 || 4);
+      const decoded = JSON.stringify(JSON.parse(atob(b64)), null, 2);
+      const uid2 = "dca-td-" + Math.random().toString(36).slice(2, 8);
+      decodedTdHtml = `<div class="mandate-section">
+        <div class="mandate-section-title" style="display:flex;justify-content:space-between;align-items:center">
+          transaction_data[0] (decoded)
+          <button class="copy-btn" onclick="copyText(document.getElementById('${uid2}').textContent,this)">📋 コピー</button>
+        </div>
+        <div class="mandate-jwt" id="${uid2}">${esc(decoded)}</div>
+      </div>`;
+    }
+  } catch {}
+
+  const uid = "dca-req-" + Math.random().toString(36).slice(2, 8);
+  return `<details class="mandate-block" style="margin-top:0.5rem">
+    <summary>📤 DC API リクエスト JSON</summary>
+    <div class="mandate-section">
+      <div class="mandate-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        navigator.credentials.get() data
+        <button class="copy-btn" onclick="copyText(document.getElementById('${uid}').textContent,this)">📋 コピー</button>
+      </div>
+      <div class="mandate-jwt" id="${uid}">${esc(requestJson)}</div>
+    </div>
+    ${decodedTdHtml}
+  </details>`;
+}
+
+/* ── dSD-JWT chain decoder ───────────────────────────────────────────────────── */
+function b64urlDecode(str) {
+  try {
+    const b64 = str.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - b64.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
+
+function decodeJwtFull(jwt) {
+  try {
+    const parts = (jwt ?? "").split(".");
+    if (parts.length < 2) return null;
+    const header  = b64urlDecode(parts[0]);
+    const payload = b64urlDecode(parts[1]);
+    return { header, payload };
+  } catch { return null; }
+}
+
+function decodeDsdJwtChain(chain) {
+  if (!chain || typeof chain !== "string") return null;
+  const sepIdx = chain.indexOf("~~");
+  if (sepIdx === -1) return null;
+
+  const sdJwtParts = chain.slice(0, sepIdx).split("~").filter(Boolean);
+  const kbParts    = chain.slice(sepIdx + 2).split("~").filter(Boolean);
+
+  const issuerJwt         = sdJwtParts[0] ?? null;
+  const dpcDisclosures    = sdJwtParts.slice(1).map(d => b64urlDecode(d)).filter(Boolean);
+  const kbSdJwt           = kbParts[0] ?? null;
+  const mandateDisclosures = kbParts.slice(1).map(d => {
+    const arr = b64urlDecode(d);
+    return Array.isArray(arr) && arr.length >= 2 ? arr[1] : null;
+  }).filter(Boolean);
+
+  return {
+    issuerJwt,
+    issuerJwtDecoded:  decodeJwtFull(issuerJwt),
+    dpcDisclosures,
+    kbSdJwt,
+    kbSdJwtDecoded:    decodeJwtFull(kbSdJwt),
+    mandateDisclosures,
+  };
+}
+
+/* ── DC API response block ───────────────────────────────────────────────────── */
+function buildDcApiResponseBlock(vpToken) {
+  if (!vpToken) return "";
+
+  function copySection(label, text) {
+    const uid = "dca-s-" + Math.random().toString(36).slice(2, 8);
+    return `<div class="mandate-section">
+      <div class="mandate-section-title" style="display:flex;justify-content:space-between;align-items:center">
+        ${esc(label)}
+        <button class="copy-btn" onclick="copyText(document.getElementById('${uid}').textContent,this)">📋 コピー</button>
+      </div>
+      <div class="mandate-jwt" id="${uid}">${esc(text)}</div>
+    </div>`;
+  }
+
+  const rawVp  = JSON.stringify(vpToken, null, 2);
+  const rawChain = vpToken?.dpc_credential;
+  const chain  = Array.isArray(rawChain) ? rawChain[0] : (typeof rawChain === "string" ? rawChain : null);
+  const dec    = chain ? decodeDsdJwtChain(chain) : null;
+
+  // ── Decoded sub-details ────────────────────────────────────────────────────
+  let decodedHtml = "";
+  if (dec) {
+    // Issuer JWT
+    let issuerSection = "";
+    if (dec.issuerJwtDecoded) {
+      issuerSection = copySection(
+        "DPC Issuer JWT — ヘッダー",
+        JSON.stringify(dec.issuerJwtDecoded.header, null, 2)
+      ) + copySection(
+        "DPC Issuer JWT — ペイロード",
+        JSON.stringify(dec.issuerJwtDecoded.payload, null, 2)
+      );
+    }
+
+    // DPC Disclosures
+    let dpcDiscHtml = dec.dpcDisclosures.map((d, i) =>
+      copySection(`DPC Disclosure [${i}]`, JSON.stringify(d, null, 2))
+    ).join("");
+
+    // KB-SD-JWT
+    let kbSection = "";
+    if (dec.kbSdJwtDecoded) {
+      kbSection = copySection(
+        "KB-SD-JWT — ヘッダー",
+        JSON.stringify(dec.kbSdJwtDecoded.header, null, 2)
+      ) + copySection(
+        "KB-SD-JWT — ペイロード",
+        JSON.stringify(dec.kbSdJwtDecoded.payload, null, 2)
+      );
+    }
+
+    // Mandate Disclosures
+    let mandateDiscHtml = dec.mandateDisclosures.map((m, i) =>
+      copySection(
+        `Mandate Disclosure [${i}]${m?.vct ? " — " + m.vct : ""}`,
+        JSON.stringify(m, null, 2)
+      )
+    ).join("");
+
+    decodedHtml = `<details class="mandate-block" style="margin-top:0.3rem;border-color:rgba(100,200,100,0.3)" open>
+      <summary style="background:rgba(100,200,100,0.07);color:#3a8a3a">🔍 dSD-JWT チェーン デコード済み</summary>
+      ${issuerSection}
+      ${dpcDiscHtml}
+      ${kbSection}
+      ${mandateDiscHtml}
+    </details>`;
+  }
+
+  return `<details class="mandate-block" style="margin-top:0.5rem" open>
+    <summary>📥 DC API レスポンス（CMWallet VP Token）</summary>
+    ${copySection("vp_token (JSON)", rawVp)}
+    ${chain ? copySection("dSD-JWT チェーン（dpc_credential 生データ）", chain) : ""}
+    ${decodedHtml}
+  </details>`;
+}
+
+/* ── Utils ───────────────────────────────────────────────────────────────────── */
+function esc(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+</script>
+</body>
+</html>
